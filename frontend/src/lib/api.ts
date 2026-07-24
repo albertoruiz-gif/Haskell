@@ -1,0 +1,51 @@
+import { getToken } from './auth';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api';
+// Los archivos subidos (fotos de producto) se sirven fuera del prefijo /api
+// (ver backend/src/main.ts, useStaticAssets no respeta setGlobalPrefix).
+const ASSET_BASE_URL = API_URL.replace(/\/api\/?$/, '');
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
+
+type ApiFetchOptions = {
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  body?: unknown;
+  isFormData?: boolean;
+};
+
+export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let body: BodyInit | undefined;
+  if (opts.body !== undefined) {
+    if (opts.isFormData) {
+      body = opts.body as FormData; // el navegador setea Content-Type con el boundary
+    } else {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(opts.body);
+    }
+  }
+
+  const res = await fetch(`${API_URL}${path}`, { method: opts.method ?? 'GET', headers, body });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? `Error ${res.status}`, res.status);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+export function resolveAssetUrl(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  return `${ASSET_BASE_URL}${path}`;
+}

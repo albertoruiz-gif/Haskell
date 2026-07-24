@@ -1,0 +1,144 @@
+name: CI/CD DevSecOps
+
+# Ver docs/DEVSECOPS.md. El repo de referencia del curso (cursos-tecylab/DVO20JUN26)
+# no fue accesible (404 publico) — este pipeline usa practicas estandar equivalentes.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # requerido para OIDC hacia AWS, sin access keys estaticas
+  contents: read
+  security-events: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: <ECR_REGISTRY> # completar con el valor real, ej. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  EKS_CLUSTER: plataforma-comercial
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm ci
+        working-directory: ${{ matrix.app }}
+      - run: npm run lint
+        working-directory: ${{ matrix.app }}
+      - run: npm run build
+        working-directory: ${{ matrix.app }}
+      - if: matrix.app == 'backend'
+        run: npm test
+        working-directory: backend
+
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+
+  sca-dependencias:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: ${{ matrix.app }}
+      - run: npm audit --audit-level=high
+        working-directory: ${{ matrix.app }}
+      - uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.app }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-and-scan-imagen:
+    needs: [lint-and-test, sast, sca-dependencias, secret-scan]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    outputs:
+      backend-sha: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t plataforma/${{ matrix.app }}:${{ github.sha }} ${{ matrix.app }}
+      - uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: plataforma/${{ matrix.app }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+  push-y-deploy-qa:
+    if: github.ref == 'refs/heads/main'
+    needs: [build-and-scan-imagen]
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - run: aws ecr get-login-password | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+      - run: |
+          for app in backend frontend; do
+            docker build -t ${{ env.ECR_REGISTRY }}/plataforma/$app:${{ github.sha }} $app
+            docker push ${{ env.ECR_REGISTRY }}/plataforma/$app:${{ github.sha }}
+          done
+      - uses: aws-actions/amazon-eks-update-kubeconfig@v2
+        with:
+          cluster-name: ${{ env.EKS_CLUSTER }}
+      - run: |
+          kubectl set image deployment/backend backend=${{ env.ECR_REGISTRY }}/plataforma/backend:${{ github.sha }} -n plataforma
+          kubectl set image deployment/frontend frontend=${{ env.ECR_REGISTRY }}/plataforma/frontend:${{ github.sha }} -n plataforma
+
+  deploy-produccion:
+    needs: [push-y-deploy-qa]
+    runs-on: ubuntu-latest
+    environment: production # gate de aprobacion manual (RFD 11.4, paso 5) — configurar reviewers en Settings > Environments
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-eks-update-kubeconfig@v2
+        with:
+          cluster-name: ${{ env.EKS_CLUSTER }}
+      - run: |
+          kubectl set image deployment/backend backend=${{ env.ECR_REGISTRY }}/plataforma/backend:${{ github.sha }} -n plataforma
+          kubectl set image deployment/frontend frontend=${{ env.ECR_REGISTRY }}/plataforma/frontend:${{ github.sha }} -n plataforma
+          kubectl rollout status deployment/backend -n plataforma
+          kubectl rollout status deployment/frontend -n plataforma
+      # Rollback manual si falla: kubectl rollout undo deployment/<nombre> -n plataforma

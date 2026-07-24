@@ -1,0 +1,37 @@
+version: '3.9'
+
+# Uso local (desarrollo). En AWS, postgres se reemplaza por RDS y los
+# secretos por AWS Secrets Manager — ver docs/DESPLIEGUE_AWS.md.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: plataforma
+      POSTGRES_PASSWORD: plataforma
+      POSTGRES_DB: plataforma_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: ../backend
+    env_file: ../backend/.env
+    environment:
+      DATABASE_URL: postgresql://plataforma:plataforma@postgres:5432/plataforma_dev
+    ports:
+      - '3000:3000'
+    depends_on:
+      - postgres
+
+  frontend:
+    build: ../frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api
+    ports:
+      - '3001:3000'
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

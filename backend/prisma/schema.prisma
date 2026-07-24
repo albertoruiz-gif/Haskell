@@ -1,0 +1,367 @@
+// Modelo de datos — Plataforma Comercial Multicanal
+// Basado en RFD v0.2 seccion 7.1 + adenda v0.3 (porcentaje asesor configurable, ofertas temporales)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Canal {
+  SALONES_BELLEZA
+  RETAIL
+  COMERCIO_MINORISTA
+}
+
+enum RolUsuario {
+  ADMINISTRADOR
+  GERENTE_COMERCIAL
+  GESTOR_CATALOGO
+  LIDER_MINORISTA
+  VENDEDOR
+  ASESOR
+  ALMACEN
+  TRANSPORTISTA
+  FINANZAS
+}
+
+enum EstadoCatalogo {
+  BORRADOR
+  EN_VALIDACION
+  OBSERVADO
+  APROBADO
+  PROGRAMADO
+  PUBLICADO
+  SUSPENDIDO
+  VENCIDO
+}
+
+enum TipoPromocion {
+  DESCUENTO_PVP
+  COMBO
+  REGALO
+  OFERTA_TEMPORAL // agregado en adenda v0.3
+}
+
+enum AlcanceOferta {
+  DIA
+  SEMANA
+  MES
+}
+
+enum AlcancePorcentaje {
+  GLOBAL
+  CAMPANA
+  CANAL
+}
+
+enum EstadoEntrega {
+  ASIGNADO
+  ACEPTADO
+  EN_RUTA
+  ENTREGADO
+  FALLIDO
+}
+
+enum EstadoPedido {
+  BORRADOR
+  PENDIENTE_PAGO
+  PAGADO
+  STOCK_RESERVADO
+  PICKING
+  PACKING
+  ENTREGADO_TRANSPORTISTA
+  EN_RUTA
+  ENTREGADO
+  ENTREGA_FALLIDA
+  CANCELADO_DEVUELTO
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  nombre       String
+  rol          RolUsuario
+  activo       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  asesor       Asesor?
+  auditLogs    AuditLog[] @relation("ActorAuditLog")
+
+  @@map("users")
+}
+
+model Asesor {
+  id               String       @id @default(cuid())
+  userId           String       @unique
+  user             User         @relation(fields: [userId], references: [id])
+  codigo           String       @unique
+  apellidos        String
+  tipoDocumento    String
+  numeroDocumento  String       @unique
+  fechaNacimiento  DateTime
+  telefonoPrincipal String
+  telefonoSecundario String?
+  numeroYape       String
+  canal            Canal
+  liderId          String?
+  odooPartnerId    Int?         // res.partner en Odoo
+
+  direcciones      Direccion[]
+  carts            Cart[]
+  pedidos          Order[]
+
+  createdAt        DateTime     @default(now())
+
+  @@map("asesores")
+}
+
+model Direccion {
+  id             String   @id @default(cuid())
+  asesorId       String
+  asesor         Asesor   @relation(fields: [asesorId], references: [id])
+  departamento   String
+  provincia      String
+  distrito       String
+  direccion      String
+  referencia     String?
+  pais           String   @default("Perú")
+  predeterminada Boolean  @default(false)
+
+  @@map("direcciones")
+}
+
+model Tarifa {
+  id             String   @id @default(cuid())
+  distrito       String   @unique
+  zona           String?
+  precio         Decimal  @db.Decimal(10, 2)
+  slaHoras       Int      @default(48)
+  activa         Boolean  @default(true)
+  vigenciaDesde  DateTime @default(now())
+  vigenciaHasta  DateTime?
+
+  @@map("tarifas")
+}
+
+model Campaign {
+  id            String     @id @default(cuid())
+  codigo        String     @unique
+  nombre        String
+  descripcion   String?
+  fechaInicio   DateTime
+  fechaFin      DateTime
+  estado        String     @default("BORRADOR")
+  canalesObjetivo Canal[]
+
+  catalogos     Catalog[]
+  pricingConfigs PricingConfig[]
+
+  createdAt     DateTime   @default(now())
+
+  @@map("campaigns")
+}
+
+model Catalog {
+  id                     String         @id @default(cuid())
+  campaignId             String
+  campaign               Campaign       @relation(fields: [campaignId], references: [id])
+  canal                  Canal
+  version                Int            @default(1)
+  estado                 EstadoCatalogo @default(BORRADOR)
+  vigenciaDesde           DateTime?
+  vigenciaHasta           DateTime?
+  responsableCargaId      String?
+  responsableAprobacionId String?
+  motivoObservacion       String?
+
+  lineas                 CatalogLine[]
+  ofertas                Offer[]
+  pricingConfigs          PricingConfig[]
+
+  createdAt               DateTime      @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  @@unique([campaignId, canal, version])
+  @@map("catalogs")
+}
+
+model CatalogLine {
+  id                       String   @id @default(cuid())
+  catalogId                String
+  catalog                  Catalog  @relation(fields: [catalogId], references: [id])
+  sku                      String   // validado contra Odoo product.product
+  categoria                String?
+  pvpCampania              Decimal  @db.Decimal(10, 2)
+  imagenUrl                String?
+  ordenVisualizacion        Int      @default(0)
+  destacado                 Boolean  @default(false)
+  cantidadMaximaPorAsesor   Int?
+
+  ofertas                  Offer[]
+  cartItems                 CartItem[]
+
+  @@unique([catalogId, sku])
+  @@map("catalog_lines")
+}
+
+// Ofertas temporales (dia/semana/mes) — adenda v0.3, extiende RF-043/RF-044
+model Offer {
+  id             String         @id @default(cuid())
+  catalogId      String
+  catalog        Catalog        @relation(fields: [catalogId], references: [id])
+  catalogLineId  String?
+  catalogLine    CatalogLine?   @relation(fields: [catalogLineId], references: [id])
+  tipo           TipoPromocion  @default(OFERTA_TEMPORAL)
+  alcance        AlcanceOferta
+  descuentoPct   Decimal?       @db.Decimal(5, 2) // ej. 25.00 = 25%
+  precioFijo     Decimal?       @db.Decimal(10, 2)
+  inicio         DateTime
+  fin            DateTime
+  creadoPorId    String
+  aprobadoPorId  String?
+  activa         Boolean        @default(true)
+
+  createdAt      DateTime       @default(now())
+
+  @@map("offers")
+}
+
+// Porcentaje del asesor configurable — adenda v0.3, modifica RN-008
+model PricingConfig {
+  id               String            @id @default(cuid())
+  alcance          AlcancePorcentaje @default(GLOBAL)
+  campaignId       String?
+  campaign         Campaign?         @relation(fields: [campaignId], references: [id])
+  catalogId        String?
+  catalog          Catalog?          @relation(fields: [catalogId], references: [id])
+  canal            Canal?
+  porcentajeAsesor Decimal           @default(80.00) @db.Decimal(5, 2)
+  actualizadoPorId String
+  createdAt        DateTime          @default(now())
+
+  @@map("pricing_configs")
+}
+
+model Cart {
+  id            String     @id @default(cuid())
+  asesorId      String
+  asesor        Asesor     @relation(fields: [asesorId], references: [id])
+  direccionId   String?
+  items         CartItem[]
+  vigenciaHasta DateTime   // reserva temporal, RN-016 (15 min por defecto)
+
+  createdAt     DateTime   @default(now())
+
+  @@map("carts")
+}
+
+model CartItem {
+  id            String       @id @default(cuid())
+  cartId        String
+  cart          Cart         @relation(fields: [cartId], references: [id])
+  catalogLineId String
+  catalogLine   CatalogLine  @relation(fields: [catalogLineId], references: [id])
+  cantidad      Int
+
+  @@map("cart_items")
+}
+
+// Pedido — snapshot histórico obligatorio (RN-007, RN-038, adenda seccion 1)
+model Order {
+  id                    String       @id @default(cuid())
+  asesorId              String
+  asesor                Asesor       @relation(fields: [asesorId], references: [id])
+  canal                 Canal
+  campaignId            String
+  catalogId             String
+  catalogVersion         Int
+  direccionSnapshot      Json         // copia histórica de la dirección
+  tarifaSnapshot          Decimal      @db.Decimal(10, 2)
+  subtotalAsesor          Decimal      @db.Decimal(10, 2)
+  totalCulqi              Decimal      @db.Decimal(10, 2)
+  estado                  EstadoPedido @default(BORRADOR)
+  referenciaWeb            String       @unique @default(cuid()) // idempotencia RF-020
+  odooSaleOrderId          Int?
+  odooSaleOrderName        String?
+
+  items                   OrderItem[]
+  pagos                    Payment[]
+  entrega                  Entrega?
+
+  createdAt                 DateTime    @default(now())
+  updatedAt                  DateTime   @updatedAt
+
+  @@map("orders")
+}
+
+// Entrega — maestro Web segun tabla 7.1 del RFD (RN-021 a RN-024, RF-027 a RF-030)
+model Entrega {
+  id                 String        @id @default(cuid())
+  orderId            String        @unique
+  order              Order         @relation(fields: [orderId], references: [id])
+  transportistaId    String
+  estado             EstadoEntrega @default(ASIGNADO)
+  bultos             Int           @default(1)
+  aceptadoEn         DateTime?
+  receptor           String?
+  documentoReceptor  String?
+  evidenciaUrl        String?      // foto/firma/OTP segun DP-010 (pendiente de decision exacta)
+  motivoFallo         String?
+  observaciones        String?
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@map("entregas")
+}
+
+model OrderItem {
+  id                       String   @id @default(cuid())
+  orderId                  String
+  order                    Order    @relation(fields: [orderId], references: [id])
+  sku                      String
+  nombre                   String
+  pvpUnitario               Decimal  @db.Decimal(10, 2)
+  porcentajeAsesorAplicado  Decimal  @db.Decimal(5, 2) // snapshot del % vigente al pagar
+  precioAsesorUnitario      Decimal  @db.Decimal(10, 2)
+  cantidad                  Int
+  promocionAplicada          Json?
+
+  @@map("order_items")
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id])
+  culqiToken     String? // uso único, no se conserva mas de lo necesario (RF-018)
+  culqiChargeId  String?  @unique
+  estado         String   @default("INICIADO") // iniciado|pendiente|aprobado|rechazado|anulado|reembolsado
+  montoCentimos  Int
+  respuestaJson  Json?
+
+  createdAt      DateTime @default(now())
+
+  @@map("payments")
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  actorId         String
+  actor           User     @relation("ActorAuditLog", fields: [actorId], references: [id])
+  accion          String
+  entidad         String
+  entidadId       String
+  valoresAntes    Json?
+  valoresDespues  Json?
+  motivo          String?
+  createdAt       DateTime @default(now())
+
+  @@map("audit_logs")
+}

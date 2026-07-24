@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+*.tsbuildinfo
+
+# Env / secrets — nunca en el repo (ver README, sección "Secretos")
+.env
+.env.local
+.env.*.local
+
+# Archivos subidos en desarrollo (fotos de producto, etc.)
+backend/uploads/
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Config local de Claude Code (permisos de esta sesión, no del proyecto)
+.claude/settings.local.json
