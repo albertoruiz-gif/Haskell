@@ -35,15 +35,52 @@ plataforma-comercial-multicanal/
 
 ## Módulos backend implementados
 
-- `auth` — login JWT, hash de contraseñas, guard global (RF-001 a RF-003).
+- `auth` — login JWT, hash de contraseñas, guard global (RF-001 a RF-003); alta/baja/reactivación de usuarios con bitácora de auditoría (`PATCH /auth/usuarios/:id/desactivar` y `/reactivar`).
 - `pricing` — % del asesor configurable, cálculo de precio y total Culqi (adenda v0.3).
-- `campaigns` — campañas, catálogos por canal, aprobación segregada, ofertas temporales (RF-040 a RF-050, adenda v0.3).
-- `catalog` — catálogo publicado filtrado por canal en servidor (RF-011 a RF-013, RF-048).
+- `campaigns` — campañas, catálogos por canal, aprobación segregada, ofertas temporales (RF-040 a RF-050, adenda v0.3), con controller propio (`POST /campaigns`, `/campaigns/:id/catalogos`, `/campaigns/catalogos/:id/aprobar|observar|publicar|suspender`, `/campaigns/ofertas`) — el listado `GET /campaigns/catalogos` no filtra por canal del JWT, pensado para uso administrativo.
+- `catalog` — catálogo publicado filtrado por canal en servidor (RF-011 a RF-013, RF-048); administración de productos vía `GET/POST /catalogo/admin/lineas`, `PATCH /catalogo/admin/lineas/:id/precio` y subida de foto (`POST /catalogo/admin/lineas/:id/foto`, servida en `/uploads/catalogo/...`).
 - `odoo` — cliente JSON-RPC genérico + mapeos de ventas/inventario/CRM/contabilidad/cobranzas (8.2).
 - `orders` — carrito → pedido con snapshot histórico, envío a Odoo (RF-014 a RF-022, RF-036).
 - `payments` — cargo Culqi, idempotencia, límite Yape (RF-018 a RF-021).
-- `afiliacion` — alta individual y carga masiva Excel con preview de válidos/errores (RF-006 a RF-009).
+- `afiliacion` — alta individual (con apellidos, DNI, dirección completa incl. país, teléfono, fecha de nacimiento) y carga masiva Excel con preview de válidos/errores (RF-006 a RF-009); listado de asesores (`GET /afiliacion`).
 - `operaciones` — picking, packing, asignación de transportista, entrega/entrega fallida, cálculo de SLA (RF-024 a RF-030).
+
+## Panel de administrador
+
+Se agregó un panel funcional en el frontend (pestaña **Gestión**), protegido por login:
+
+- **Login** (`/login`) — guarda el JWT en `localStorage`; sin sesión, cualquier ruta redirige ahí (`components/auth/AuthGate.tsx`).
+- **Asesores** — alta con los campos completos (Nombre, Apellidos, Teléfono, Fecha de nacimiento, DNI, Dirección, Distrito, Provincia, Departamento, País con default "Perú"), listado, y baja/reactivación.
+- **Catálogo/Precios** — alta de producto (SKU, categoría, precio) dentro de un catálogo publicado, edición de precio, subida de foto.
+- **Ofertas** — creación y listado de ofertas temporales (día/semana/mes, % descuento o precio fijo) tipo pop-up sobre un catálogo publicado.
+
+Primer acceso: no hay registro público de administradores a propósito. Se crea con el seed (ver abajo).
+
+## Cómo correr en local (desarrollo)
+
+Si no tenés Node.js instalado, todo el stack corre igual vía Docker (así se probó en este entorno):
+
+```powershell
+# Red compartida
+docker network create haskell-net
+
+# Postgres
+docker run --name haskell-postgres --network haskell-net -d -p 5432:5432 `
+  -e POSTGRES_USER=plataforma -e POSTGRES_PASSWORD=plataforma -e POSTGRES_DB=plataforma_dev `
+  -v haskell-pgdata:/var/lib/postgresql/data postgres:16-alpine
+
+# Backend (copiá backend/.env.example a backend/.env y ajustá DATABASE_URL al host "haskell-postgres")
+docker run --name haskell-backend-dev --network haskell-net -d -p 3002:3000 `
+  -v "${PWD}/backend:/app" -w /app node:20-alpine sh -c "apk add --no-cache openssl && npm install && npx prisma migrate dev && npm run start:dev"
+
+# Primer usuario ADMINISTRADOR (ver backend/prisma/seed.ts — variables SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD opcionales)
+docker exec haskell-backend-dev npx prisma db seed
+
+# Frontend (backend/.env.local con NEXT_PUBLIC_API_URL=http://localhost:3002/api)
+docker run --name haskell-frontend-dev -d -p 3000:3000 -v "${PWD}/frontend:/app" -w /app node:20-alpine sh -c "npm install && npm run dev"
+```
+
+Con Node.js instalado localmente, es el flujo estándar: `npm install` + `npm run start:dev` en `backend/` y `npm install` + `npm run dev` en `frontend/`.
 
 ## Lo que falta (fuera de este scaffold)
 
@@ -52,7 +89,9 @@ plataforma-comercial-multicanal/
 - Comprobantes electrónicos (RF-023) — depende de decidir proveedor CPE (DP-005).
 - Flujo de recuperación de clave (RF-001) y MFA de administradores (RNF-007).
 - Job programado de publicación/vencimiento automático de catálogos (RF-047).
-- Mapeo real SKU web ↔ `product.product` de Odoo (hoy hay un TODO explícito en `orders.service.ts`).
+- Mapeo real SKU web ↔ `product.product` de Odoo (hoy hay un TODO explícito en `orders.service.ts`; el alta de producto en el panel de administrador crea la línea de catálogo directo, sin sincronizar contra Odoo todavía).
 - Pruebas automatizadas (Jest) — la estructura ya soporta `npm test` pero no hay specs escritos todavía.
+- Conectar `/catalogo` (vista del asesor) al backend real — hoy sigue con datos de ejemplo hardcodeados; el panel de administrador sí es funcional de punta a punta.
+- Volumen persistente para `backend/uploads/` en `infra/docker-compose.yml` y Kubernetes — las fotos de producto no sobreviven a recrear el contenedor en esos entornos (en el contenedor de desarrollo con bind mount sí persisten).
 
 Priorizá lo que falta según las Fases 0-5 del RFD (sección 15) y las 25 decisiones pendientes de `docs/RFD_ADENDA_v0.3.md` — varias bloquean reglas exactas (redondeo, SLA, evidencia de entrega, comprobantes).
