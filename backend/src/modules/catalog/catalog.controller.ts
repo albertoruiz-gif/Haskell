@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { CrearLineaDto } from './dto/crear-linea.dto';
 import { ActualizarPrecioDto } from './dto/actualizar-precio.dto';
+import { ActualizarLineaDto } from './dto/actualizar-linea.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { multerCatalogConfig } from '../../common/upload/multer-catalog.config';
@@ -25,6 +26,10 @@ export class CatalogController {
   async catalogoVigente(@Req() req: any, @Query('busqueda') busqueda?: string) {
     const canalDelUsuario = req.user.canal; // proviene del JWT, no del querystring
 
+    // Roles sin Asesor asociado (administrador, almacen, etc.) no tienen
+    // canal — no hay catalogo de asesor que mostrarles.
+    if (!canalDelUsuario) return { canal: null, campania: null, productos: [] };
+
     const catalogo = await this.prisma.catalog.findFirst({
       where: {
         canal: canalDelUsuario,
@@ -34,7 +39,15 @@ export class CatalogController {
       },
       include: {
         lineas: busqueda
-          ? { where: { OR: [{ sku: { contains: busqueda, mode: 'insensitive' } }, { categoria: { contains: busqueda, mode: 'insensitive' } }] } }
+          ? {
+              where: {
+                OR: [
+                  { sku: { contains: busqueda, mode: 'insensitive' } },
+                  { nombre: { contains: busqueda, mode: 'insensitive' } },
+                  { categoria: { contains: busqueda, mode: 'insensitive' } },
+                ],
+              },
+            }
           : true,
       },
       orderBy: { version: 'desc' },
@@ -50,11 +63,22 @@ export class CatalogController {
           canal: catalogo.canal,
         });
         return {
+          id: linea.id,
           sku: linea.sku,
+          nombre: linea.nombre,
+          categoria: linea.categoria,
+          subcategoria: linea.subcategoria,
+          tipo: linea.tipo,
+          descripcion: linea.descripcion,
+          beneficios: linea.beneficios,
+          propiedades: linea.propiedades,
+          modoUso: linea.modoUso,
+          activos: linea.activos,
           pvp: Number(linea.pvpCampania),
           precioAsesor: this.pricing.calcularPrecioAsesor(Number(linea.pvpCampania), porcentaje),
           destacado: linea.destacado,
           imagenUrl: linea.imagenUrl,
+          imagenesAdicionales: linea.imagenesAdicionales,
         };
       }),
     );
@@ -87,6 +111,12 @@ export class CatalogController {
     return this.prisma.catalogLine.update({ where: { id }, data: { pvpCampania: dto.pvpCampania } });
   }
 
+  @Patch('admin/lineas/:id')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  actualizarLinea(@Param('id') id: string, @Body() dto: ActualizarLineaDto) {
+    return this.prisma.catalogLine.update({ where: { id }, data: dto });
+  }
+
   @Post('admin/lineas/:id/foto')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
   @UseInterceptors(FileInterceptor('foto', multerCatalogConfig))
@@ -94,6 +124,30 @@ export class CatalogController {
     return this.prisma.catalogLine.update({
       where: { id },
       data: { imagenUrl: `/uploads/catalogo/${foto.filename}` },
+    });
+  }
+
+  @Delete('admin/lineas/:id')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  async eliminarLinea(@Param('id') id: string) {
+    await this.prisma.offer.deleteMany({ where: { catalogLineId: id } });
+    try {
+      await this.prisma.catalogLine.delete({ where: { id } });
+    } catch {
+      throw new BadRequestException('No se puede eliminar: el producto ya está referenciado en un carrito o pedido.');
+    }
+    return { eliminado: true };
+  }
+
+  @Post('admin/lineas/:id/fotos-adicionales')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  @UseInterceptors(FilesInterceptor('fotos', 6, multerCatalogConfig))
+  async subirFotosAdicionales(@Param('id') id: string, @UploadedFiles() fotos: Express.Multer.File[]) {
+    const linea = await this.prisma.catalogLine.findUniqueOrThrow({ where: { id } });
+    const nuevas = fotos.map((f) => `/uploads/catalogo/${f.filename}`);
+    return this.prisma.catalogLine.update({
+      where: { id },
+      data: { imagenesAdicionales: [...linea.imagenesAdicionales, ...nuevas] },
     });
   }
 }

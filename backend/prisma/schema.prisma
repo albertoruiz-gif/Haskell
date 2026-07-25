@@ -196,9 +196,18 @@ model CatalogLine {
   catalogId                String
   catalog                  Catalog  @relation(fields: [catalogId], references: [id])
   sku                      String   // validado contra Odoo product.product
+  nombre                   String?
   categoria                String?
+  subcategoria             String?
+  tipo                     String?
+  descripcion              String?  @db.Text
+  beneficios               String?  @db.Text
+  propiedades              String?  @db.Text
+  modoUso                  String?  @db.Text
+  activos                  String?  @db.Text
   pvpCampania              Decimal  @db.Decimal(10, 2)
   imagenUrl                String?
+  imagenesAdicionales      String[] @default([])
   ordenVisualizacion        Int      @default(0)
   destacado                 Boolean  @default(false)
   cantidadMaximaPorAsesor   Int?

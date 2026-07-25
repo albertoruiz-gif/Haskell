@@ -132,4 +132,8 @@ export class CampaignsService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  async desactivarOferta(id: string) {
+    return this.prisma.offer.update({ where: { id }, data: { activa: false } });
+  }
 }

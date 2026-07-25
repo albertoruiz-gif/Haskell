@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../lib/api';
+import { EditarProductoModal, LineaAdmin } from './EditarProductoModal';
+import { CatalogosPanel } from './CatalogosPanel';
 
 type Catalogo = { id: string; canal: string; version: number; estado: string; campaign: { nombre: string } };
-type Linea = { id: string; sku: string; categoria: string | null; pvpCampania: string; imagenUrl: string | null };
+type Linea = LineaAdmin;
 
 export function CatalogoPreciosTab() {
   const [catalogos, setCatalogos] = useState<Catalogo[]>([]);
@@ -15,12 +17,13 @@ export function CatalogoPreciosTab() {
   const [nuevaCategoria, setNuevaCategoria] = useState('');
   const [nuevoPrecio, setNuevoPrecio] = useState('');
   const [precios, setPrecios] = useState<Record<string, string>>({});
+  const [editando, setEditando] = useState<Linea | null>(null);
 
   async function cargarCatalogos() {
     try {
-      const data = await apiFetch<Catalogo[]>('/campaigns/catalogos?estado=PUBLICADO');
+      const data = await apiFetch<Catalogo[]>('/campaigns/catalogos');
       setCatalogos(data);
-      if (!catalogoId && data.length > 0) setCatalogoId(data[0].id);
+      setCatalogoId((actual) => actual || (data.length > 0 ? data[0].id : ''));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar los catálogos.');
     }
@@ -88,17 +91,21 @@ export function CatalogoPreciosTab() {
     }
   }
 
-  if (catalogos.length === 0) {
-    return <p className="rounded-card bg-white p-3 text-xs text-bosque/60 shadow-sm">No hay ningún catálogo publicado todavía.</p>;
-  }
-
   return (
     <div className="space-y-3">
+      <CatalogosPanel onCambio={cargarCatalogos} />
+
+      {catalogos.length === 0 ? (
+        <p className="rounded-card bg-white p-3 text-xs text-bosque/60 shadow-sm">
+          Todavía no hay ningún catálogo — abrí "Campañas y catálogos" arriba para crear uno.
+        </p>
+      ) : (
+        <>
       <div className="rounded-card bg-white p-3 shadow-sm">
         <label className="text-xs font-medium uppercase text-bosque/60">Catálogo</label>
         <select value={catalogoId} onChange={(e) => setCatalogoId(e.target.value)} className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
           {catalogos.map((c) => (
-            <option key={c.id} value={c.id}>{c.campaign.nombre} · {c.canal} · v{c.version}</option>
+            <option key={c.id} value={c.id}>{c.campaign.nombre} · {c.canal} · v{c.version} · {c.estado}</option>
           ))}
         </select>
       </div>
@@ -116,7 +123,8 @@ export function CatalogoPreciosTab() {
       <div className="space-y-2">
         {lineas.map((l) => (
           <div key={l.id} className="rounded-card bg-white p-3 shadow-sm">
-            <p className="text-sm font-medium">{l.sku} {l.categoria && <span className="text-bosque/50">· {l.categoria}</span>}</p>
+            <p className="text-sm font-medium">{l.nombre ?? l.sku}</p>
+            <p className="text-xs text-bosque/50">{l.sku} {l.categoria && <>· {l.categoria}</>}</p>
 
             {l.imagenUrl ? (
               <img src={resolveAssetUrl(l.imagenUrl)} alt={l.sku} className="my-3 h-40 w-full rounded-card object-cover" />
@@ -144,10 +152,34 @@ export function CatalogoPreciosTab() {
                 Guardar precio
               </button>
             </div>
+
+            <button
+              onClick={() => setEditando(l)}
+              className="mt-2 w-full rounded-pill bg-crema py-2 text-xs font-medium text-bosque"
+            >
+              Editar ficha completa / eliminar / oferta
+            </button>
           </div>
         ))}
         {lineas.length === 0 && <p className="text-xs text-bosque/50">Este catálogo todavía no tiene productos.</p>}
       </div>
+
+      {editando && (
+        <EditarProductoModal
+          linea={editando}
+          onClose={() => setEditando(null)}
+          onGuardado={() => {
+            setEditando(null);
+            cargarLineas(catalogoId);
+          }}
+          onEliminado={() => {
+            setEditando(null);
+            cargarLineas(catalogoId);
+          }}
+        />
+      )}
+        </>
+      )}
     </div>
   );
 }

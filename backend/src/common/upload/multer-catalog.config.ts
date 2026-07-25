@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import { randomBytes } from 'crypto';
 
 const destino = join(process.cwd(), 'uploads', 'catalogo');
 if (!existsSync(destino)) mkdirSync(destino, { recursive: true });
@@ -12,7 +13,7 @@ export const multerCatalogConfig = {
   storage: diskStorage({
     destination: destino,
     filename: (req: any, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-      cb(null, `${req.params.id}-${Date.now()}${extname(file.originalname)}`);
+      cb(null, `${req.params.id}-${Date.now()}-${randomBytes(4).toString('hex')}${extname(file.originalname)}`);
     },
   }),
   fileFilter: (req: any, file: Express.Multer.File, cb: (error: Error | null, accept: boolean) => void) => {

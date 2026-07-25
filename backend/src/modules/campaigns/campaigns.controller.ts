@@ -74,6 +74,12 @@ export class CampaignsController {
     });
   }
 
+  @Get()
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  listarCampanias() {
+    return this.prisma.campaign.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+
   // Listado sin filtro de canal del JWT — GET /catalogo no sirve para
   // admins (canal viene null si el usuario no es asesor).
   @Get('catalogos')
@@ -142,5 +148,11 @@ export class CampaignsController {
   @Get('ofertas/vigente')
   ofertaVigente(@Query('catalogLineId') catalogLineId: string) {
     return this.campaigns.ofertaVigentePara(catalogLineId);
+  }
+
+  @Post('ofertas/:id/desactivar')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
+  desactivarOferta(@Param('id') id: string) {
+    return this.campaigns.desactivarOferta(id);
   }
 }
