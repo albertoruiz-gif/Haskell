@@ -15,6 +15,10 @@ export class CrearLineaDto {
 
   @IsOptional()
   @IsString()
+  linea?: string;
+
+  @IsOptional()
+  @IsString()
   subcategoria?: string;
 
   @IsOptional()

@@ -101,7 +101,7 @@ export function AsesoresTab() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 lg:grid lg:grid-cols-[360px_1fr] lg:items-start lg:gap-4 lg:space-y-0">
       <form onSubmit={onSubmit} className="space-y-2 rounded-card bg-white p-3 shadow-sm">
         <p className="text-sm font-medium text-bosque">Nuevo asesor</p>
         <div className="grid grid-cols-2 gap-2">
@@ -129,7 +129,7 @@ export function AsesoresTab() {
         </button>
       </form>
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {asesores.map((a) => (
           <div key={a.id} className="rounded-card bg-white p-3 shadow-sm">
             <div className="flex items-start justify-between">

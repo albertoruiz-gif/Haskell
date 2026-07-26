@@ -91,6 +91,7 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   asesor       Asesor?
+  transportista Transportista?
   auditLogs    AuditLog[] @relation("ActorAuditLog")
 
   @@map("users")
@@ -136,12 +137,29 @@ model Direccion {
   @@map("direcciones")
 }
 
+// Transportista autorizado — módulo Transporte/Delivery. Pago fijo por
+// entrega (elegido sobre pago por zona o registro manual sin fórmula).
+model Transportista {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id])
+  telefono          String
+  placa             String?
+  tarifaPorEntrega  Decimal  @db.Decimal(10, 2)
+
+  entregas          Entrega[]
+
+  createdAt         DateTime @default(now())
+
+  @@map("transportistas")
+}
+
 model Tarifa {
   id             String   @id @default(cuid())
   distrito       String   @unique
   zona           String?
   precio         Decimal  @db.Decimal(10, 2)
-  slaHoras       Int      @default(48)
+  slaHoras       Int      @default(36)
   activa         Boolean  @default(true)
   vigenciaDesde  DateTime @default(now())
   vigenciaHasta  DateTime?
@@ -198,6 +216,7 @@ model CatalogLine {
   sku                      String   // validado contra Odoo product.product
   nombre                   String?
   categoria                String?
+  linea                    String?
   subcategoria             String?
   tipo                     String?
   descripcion              String?  @db.Text
@@ -292,6 +311,8 @@ model Order {
   catalogVersion         Int
   direccionSnapshot      Json         // copia histórica de la dirección
   tarifaSnapshot          Decimal      @db.Decimal(10, 2)
+  slaHorasSnapshot         Int?        // copia de Tarifa.slaHoras vigente al crear el pedido (RF-030)
+  pagadoEn                 DateTime?   // cuando se valida el pago — arranca el conteo del SLA de entrega
   subtotalAsesor          Decimal      @db.Decimal(10, 2)
   totalCulqi              Decimal      @db.Decimal(10, 2)
   estado                  EstadoPedido @default(BORRADOR)
@@ -315,6 +336,7 @@ model Entrega {
   orderId            String        @unique
   order              Order         @relation(fields: [orderId], references: [id])
   transportistaId    String
+  transportista      Transportista @relation(fields: [transportistaId], references: [id])
   estado             EstadoEntrega @default(ASIGNADO)
   bultos             Int           @default(1)
   aceptadoEn         DateTime?
@@ -323,6 +345,9 @@ model Entrega {
   evidenciaUrl        String?      // foto/firma/OTP segun DP-010 (pendiente de decision exacta)
   motivoFallo         String?
   observaciones        String?
+  montoPago            Decimal?    @db.Decimal(10, 2) // snapshot de Transportista.tarifaPorEntrega al entregar
+  pagado               Boolean     @default(false)
+  pagadoEn             DateTime?
 
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt

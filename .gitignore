@@ -24,3 +24,6 @@ Thumbs.db
 
 # Config local de Claude Code (permisos de esta sesión, no del proyecto)
 .claude/settings.local.json
+
+# Config local del editor (VS Code)
+.vscode/

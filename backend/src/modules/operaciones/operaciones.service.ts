@@ -76,10 +76,14 @@ export class OperacionesService {
     });
   }
 
-  // RF-022 (RN-022): el transportista acepta la mercadería antes de repartir
-  async aceptarBultos(orderId: string, transportistaId: string) {
+  // RF-022 (RN-022): el transportista acepta la mercadería antes de repartir.
+  // El administrador puede hacerlo en su lugar (override operativo, ej.
+  // mientras no exista una app propia para transportistas). La identidad
+  // se compara contra Transportista.id (transportistaId del JWT), no
+  // contra el id del usuario.
+  async aceptarBultos(orderId: string, actorTransportistaId: string | null, actorRol: string) {
     const entrega = await this.prisma.entrega.findUniqueOrThrow({ where: { orderId } });
-    if (entrega.transportistaId !== transportistaId) {
+    if (actorRol !== 'ADMINISTRADOR' && entrega.transportistaId !== actorTransportistaId) {
       throw new BadRequestException('Solo el transportista asignado puede aceptar los bultos.');
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO_TRANSPORTISTA } });
@@ -89,14 +93,44 @@ export class OperacionesService {
     });
   }
 
+  // Sale a reparto — entre aceptar los bultos y la entrega/fallo final.
+  async marcarEnRuta(orderId: string) {
+    const entrega = await this.prisma.entrega.findUniqueOrThrow({ where: { orderId } });
+    if (entrega.estado !== EstadoEntrega.ACEPTADO) {
+      throw new BadRequestException('Primero hay que aceptar los bultos antes de salir a reparto.');
+    }
+    await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.EN_RUTA } });
+    return this.prisma.entrega.update({ where: { orderId }, data: { estado: EstadoEntrega.EN_RUTA } });
+  }
+
   // RF-028: entrega exitosa con receptor + evidencia (foto/firma/OTP — exacto queda en DP-010)
+  // Al entregar se congela el pago al transportista (tarifa fija por
+  // entrega, elegida sobre pago por zona o registro manual sin fórmula).
   async confirmarEntrega(orderId: string, data: { receptor: string; documentoReceptor?: string; evidenciaUrl?: string }) {
     if (!data.receptor) throw new BadRequestException('La entrega requiere al menos receptor y fecha/hora (RF-028).');
+    const entregaActual = await this.prisma.entrega.findUniqueOrThrow({ where: { orderId }, include: { transportista: true } });
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO } });
     return this.prisma.entrega.update({
       where: { orderId },
-      data: { estado: EstadoEntrega.ENTREGADO, ...data },
+      data: { estado: EstadoEntrega.ENTREGADO, montoPago: entregaActual.transportista.tarifaPorEntrega, ...data },
     });
+  }
+
+  /** Pagos a transportistas: lista de entregas completadas, pagadas o no (módulo Transporte). */
+  async listarPagosTransportista(transportistaId?: string, pagado?: boolean) {
+    return this.prisma.entrega.findMany({
+      where: {
+        estado: EstadoEntrega.ENTREGADO,
+        transportistaId: transportistaId || undefined,
+        pagado: pagado === undefined ? undefined : pagado,
+      },
+      include: { transportista: { include: { user: true } }, order: { select: { referenciaWeb: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async marcarPagado(entregaId: string) {
+    return this.prisma.entrega.update({ where: { id: entregaId }, data: { pagado: true, pagadoEn: new Date() } });
   }
 
   // RF-029: entrega fallida — no se marca exitosa, genera alerta para reprogramar/devolver

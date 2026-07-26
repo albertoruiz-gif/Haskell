@@ -9,6 +9,7 @@ export type LineaAdmin = {
   sku: string;
   nombre: string | null;
   categoria: string | null;
+  linea: string | null;
   subcategoria: string | null;
   tipo: string | null;
   descripcion: string | null;
@@ -61,6 +62,7 @@ export function EditarProductoModal({
   const [form, setForm] = useState({
     nombre: linea.nombre ?? '',
     categoria: linea.categoria ?? '',
+    lineaProducto: linea.linea ?? '',
     subcategoria: linea.subcategoria ?? '',
     tipo: linea.tipo ?? '',
     descripcion: linea.descripcion ?? '',
@@ -90,9 +92,10 @@ export function EditarProductoModal({
     setError(null);
     setGuardando(true);
     try {
+      const { lineaProducto, ...resto } = form;
       await apiFetch(`/catalogo/admin/lineas/${linea.id}`, {
         method: 'PATCH',
-        body: { ...form, pvpCampania: Number(form.pvpCampania) },
+        body: { ...resto, linea: lineaProducto, pvpCampania: Number(form.pvpCampania) },
       });
       onGuardado();
     } catch (err) {
@@ -188,8 +191,11 @@ export function EditarProductoModal({
           </div>
 
           <Campo label="Nombre" value={form.nombre} onChange={(v) => setCampo('nombre', v)} />
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Campo label="Categoría" value={form.categoria} onChange={(v) => setCampo('categoria', v)} />
+            <Campo label="Línea" value={form.lineaProducto} onChange={(v) => setCampo('lineaProducto', v)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             <Campo label="Subcategoría" value={form.subcategoria} onChange={(v) => setCampo('subcategoria', v)} />
             <Campo label="Tipo" value={form.tipo} onChange={(v) => setCampo('tipo', v)} />
           </div>

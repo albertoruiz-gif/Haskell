@@ -11,6 +11,10 @@ export class ActualizarLineaDto {
 
   @IsOptional()
   @IsString()
+  linea?: string;
+
+  @IsOptional()
+  @IsString()
   subcategoria?: string;
 
   @IsOptional()

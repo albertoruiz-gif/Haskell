@@ -88,7 +88,7 @@ export function OfertasTab() {
 
   return (
     <div className="space-y-3">
-      <div className="rounded-card bg-white p-3 shadow-sm">
+      <div className="rounded-card bg-white p-3 shadow-sm lg:max-w-sm">
         <label className="text-xs font-medium uppercase text-bosque/60">Catálogo</label>
         <select value={catalogoId} onChange={(e) => setCatalogoId(e.target.value)} className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
           {catalogos.map((c) => (
@@ -97,7 +97,7 @@ export function OfertasTab() {
         </select>
       </div>
 
-      <form onSubmit={crearOferta} className="space-y-2 rounded-card bg-white p-3 shadow-sm">
+      <form onSubmit={crearOferta} className="space-y-2 rounded-card bg-white p-3 shadow-sm lg:max-w-md">
         <p className="text-sm font-medium text-bosque">Nueva oferta (pop-up)</p>
         <select value={form.alcance} onChange={(e) => setCampo('alcance', e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
           {ALCANCES.map((a) => (
@@ -117,7 +117,7 @@ export function OfertasTab() {
         <button type="submit" className="w-full rounded-pill bg-acento py-2 text-sm font-medium text-white">Crear oferta</button>
       </form>
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {ofertas.map((o) => (
           <div key={o.id} className="rounded-card bg-white p-3 shadow-sm">
             <div className="flex items-start justify-between">

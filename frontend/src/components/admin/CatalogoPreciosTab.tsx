@@ -101,30 +101,32 @@ export function CatalogoPreciosTab() {
         </p>
       ) : (
         <>
-      <div className="rounded-card bg-white p-3 shadow-sm">
-        <label className="text-xs font-medium uppercase text-bosque/60">Catálogo</label>
-        <select value={catalogoId} onChange={(e) => setCatalogoId(e.target.value)} className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
-          {catalogos.map((c) => (
-            <option key={c.id} value={c.id}>{c.campaign.nombre} · {c.canal} · v{c.version} · {c.estado}</option>
-          ))}
-        </select>
-      </div>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="rounded-card bg-white p-3 shadow-sm">
+          <label className="text-xs font-medium uppercase text-bosque/60">Catálogo</label>
+          <select value={catalogoId} onChange={(e) => setCatalogoId(e.target.value)} className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
+            {catalogos.map((c) => (
+              <option key={c.id} value={c.id}>{c.campaign.nombre} · {c.canal} · v{c.version} · {c.estado}</option>
+            ))}
+          </select>
+        </div>
 
-      <form onSubmit={crearLinea} className="space-y-2 rounded-card bg-white p-3 shadow-sm">
-        <p className="text-sm font-medium text-bosque">Nuevo producto</p>
-        <input required placeholder="SKU" value={nuevoSku} onChange={(e) => setNuevoSku(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-        <input placeholder="Categoría (opcional)" value={nuevaCategoria} onChange={(e) => setNuevaCategoria(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-        <input required type="number" step="0.01" placeholder="Precio" value={nuevoPrecio} onChange={(e) => setNuevoPrecio(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-        <button type="submit" className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">Agregar producto</button>
-      </form>
+        <form onSubmit={crearLinea} className="space-y-2 rounded-card bg-white p-3 shadow-sm">
+          <p className="text-sm font-medium text-bosque">Nuevo producto</p>
+          <input required placeholder="SKU" value={nuevoSku} onChange={(e) => setNuevoSku(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
+          <input placeholder="Categoría (opcional)" value={nuevaCategoria} onChange={(e) => setNuevaCategoria(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
+          <input required type="number" step="0.01" placeholder="Precio" value={nuevoPrecio} onChange={(e) => setNuevoPrecio(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
+          <button type="submit" className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">Agregar producto</button>
+        </form>
+      </div>
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {lineas.map((l) => (
           <div key={l.id} className="rounded-card bg-white p-3 shadow-sm">
             <p className="text-sm font-medium">{l.nombre ?? l.sku}</p>
-            <p className="text-xs text-bosque/50">{l.sku} {l.categoria && <>· {l.categoria}</>}</p>
+            <p className="text-xs text-bosque/50">{l.sku} {l.linea && <>· {l.linea}</>}</p>
 
             {l.imagenUrl ? (
               <img src={resolveAssetUrl(l.imagenUrl)} alt={l.sku} className="my-3 h-40 w-full rounded-card object-cover" />

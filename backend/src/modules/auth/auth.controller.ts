@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsEmail, IsString } from 'class-validator';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
@@ -34,5 +34,11 @@ export class AuthController {
   @Roles('ADMINISTRADOR')
   reactivar(@Param('id') id: string, @Req() req: any) {
     return this.authService.reactivarUsuario(id, req.user.id);
+  }
+
+  @Get('usuarios')
+  @Roles('ADMINISTRADOR', 'ALMACEN')
+  listarPorRol(@Query('rol') rol: string) {
+    return this.authService.listarPorRol(rol);
   }
 }

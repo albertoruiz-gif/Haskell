@@ -22,7 +22,7 @@ export class AuthService {
   async login(email: string, password: string, ip?: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { asesor: true },
+      include: { asesor: true, transportista: true },
     });
 
     if (!user || !user.activo) {
@@ -50,6 +50,7 @@ export class AuthService {
       rol: user.rol,
       canal: user.asesor?.canal ?? null,
       asesorId: user.asesor?.id ?? null,
+      transportistaId: user.transportista?.id ?? null,
     };
 
     await this.prisma.auditLog.create({
@@ -82,6 +83,15 @@ export class AuthService {
       data: { actorId, accion: 'REACTIVAR_USUARIO', entidad: 'User', entidadId: userId },
     });
     return this.prisma.user.update({ where: { id: userId }, data: { activo: true } });
+  }
+
+  // Para asignar transportista (Almacén) o cualquier otro selector por rol.
+  async listarPorRol(rol: string) {
+    return this.prisma.user.findMany({
+      where: { rol: rol as any, activo: true },
+      select: { id: true, nombre: true, email: true },
+      orderBy: { nombre: 'asc' },
+    });
   }
 
   // TODO RF-001: flujo de recuperacion segura de acceso (envio de link firmado por correo, expira en X minutos)

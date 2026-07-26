@@ -11,6 +11,8 @@ import { HealthController } from './modules/health/health.controller';
 import { AuthModule } from './modules/auth/auth.module';
 import { AfiliacionModule } from './modules/afiliacion/afiliacion.module';
 import { OperacionesModule } from './modules/operaciones/operaciones.module';
+import { TransportistasModule } from './modules/transportistas/transportistas.module';
+import { TarifasModule } from './modules/tarifas/tarifas.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -29,6 +31,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     OrdersModule,
     PaymentsModule,
     OperacionesModule,
+    TransportistasModule,
+    TarifasModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -1,13 +1,14 @@
 'use client';
 
-// Carrito de compra en el cliente (localStorage). El checkout con Culqi/Yape
-// y la persistencia en el backend (modelo Cart/CartItem, reserva de stock
-// RN-016) quedan para cuando se conecte el flujo de pago — esto solo cubre
-// agregar/quitar productos mientras se navega el catálogo.
+// Carrito de compra en el cliente (localStorage) — el checkout llama a
+// POST /orders con el catalogLineId de cada item. La reserva de stock del
+// modelo Cart/CartItem (RN-016) no está conectada: el pedido se crea
+// directo al pagar, sin timer de reserva previo.
 
 import { createContext, useContext, useEffect, useState } from 'react';
 
 export type ItemCarrito = {
+  catalogLineId: string;
   sku: string;
   nombre: string;
   precioUnitario: number;
@@ -19,6 +20,7 @@ type CartContextValue = {
   agregar: (item: Omit<ItemCarrito, 'cantidad'>) => void;
   actualizarCantidad: (sku: string, cantidad: number) => void;
   quitar: (sku: string) => void;
+  vaciar: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -32,7 +34,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
       try {
-        setItems(JSON.parse(raw));
+        const guardado = JSON.parse(raw) as ItemCarrito[];
+        // Carritos guardados antes de agregar catalogLineId no sirven para
+        // el checkout — se descartan en vez de mandarlos rotos al backend.
+        setItems(guardado.filter((i) => typeof i.catalogLineId === 'string'));
       } catch {
         // ignorar carrito corrupto
       }
@@ -65,7 +70,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((prev) => prev.filter((i) => i.sku !== sku));
   }
 
-  return <CartContext.Provider value={{ items, agregar, actualizarCantidad, quitar }}>{children}</CartContext.Provider>;
+  function vaciar() {
+    setItems([]);
+  }
+
+  return <CartContext.Provider value={{ items, agregar, actualizarCantidad, quitar, vaciar }}>{children}</CartContext.Provider>;
 }
 
 export function useCart() {

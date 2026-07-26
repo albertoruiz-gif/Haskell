@@ -17,11 +17,9 @@ type RespuestaCatalogo = { canal: string | null; catalogoId?: string; productos:
 
 const TODAS = 'Todas';
 
-function useFiltroOpciones(productos: ProductoCompleto[], campo: 'categoria' | 'subcategoria' | 'tipo') {
-  return useMemo(() => {
-    const set = new Set(productos.map((p) => p[campo] ?? 'Otros'));
-    return [TODAS, ...Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))];
-  }, [productos, campo]);
+function opcionesDe(productos: ProductoCompleto[], campo: 'categoria' | 'subcategoria' | 'tipo') {
+  const set = new Set(productos.map((p) => p[campo] ?? 'Otros'));
+  return [TODAS, ...Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))];
 }
 
 export default function CatalogoPage() {
@@ -34,6 +32,19 @@ export default function CatalogoPage() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
   const [seleccionado, setSeleccionado] = useState<ProductoCompleto | null>(null);
+  const [agregados, setAgregados] = useState<Set<string>>(new Set());
+
+  function agregarConFeedback(p: ProductoCompleto) {
+    agregar({ catalogLineId: p.id, sku: p.sku, nombre: p.nombre ?? p.sku, precioUnitario: p.precioAsesor });
+    setAgregados((prev) => new Set(prev).add(p.sku));
+    setTimeout(() => {
+      setAgregados((prev) => {
+        const copia = new Set(prev);
+        copia.delete(p.sku);
+        return copia;
+      });
+    }, 1500);
+  }
 
   useEffect(() => {
     (async () => {
@@ -50,9 +61,34 @@ export default function CatalogoPage() {
     })();
   }, []);
 
-  const categorias = useFiltroOpciones(productos, 'categoria');
-  const subcategorias = useFiltroOpciones(productos, 'subcategoria');
-  const tipos = useFiltroOpciones(productos, 'tipo');
+  // Filtros en cascada: Subcategoría se acota a lo que existe dentro de la
+  // Categoría elegida, y Tipo se acota a lo que existe dentro de la
+  // Subcategoría (y Categoría) elegidas — así no se puede armar una
+  // combinación que dé 0 resultados.
+  const categorias = useMemo(() => opcionesDe(productos, 'categoria'), [productos]);
+
+  const productosPorCategoria = useMemo(
+    () => (categoria === TODAS ? productos : productos.filter((p) => (p.categoria ?? 'Otros') === categoria)),
+    [productos, categoria],
+  );
+  const subcategorias = useMemo(() => opcionesDe(productosPorCategoria, 'subcategoria'), [productosPorCategoria]);
+
+  const productosPorSubcategoria = useMemo(
+    () => (subcategoria === TODAS ? productosPorCategoria : productosPorCategoria.filter((p) => (p.subcategoria ?? 'Otros') === subcategoria)),
+    [productosPorCategoria, subcategoria],
+  );
+  const tipos = useMemo(() => opcionesDe(productosPorSubcategoria, 'tipo'), [productosPorSubcategoria]);
+
+  // Si al cambiar un filtro de arriba la seleccion de abajo deja de tener
+  // sentido (0 productos posibles), se resetea a "Todas" en vez de dejar
+  // una combinacion imposible elegida.
+  useEffect(() => {
+    if (subcategoria !== TODAS && !subcategorias.includes(subcategoria)) setSubcategoria(TODAS);
+  }, [subcategorias, subcategoria]);
+
+  useEffect(() => {
+    if (tipo !== TODAS && !tipos.includes(tipo)) setTipo(TODAS);
+  }, [tipos, tipo]);
 
   const filtrados = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
@@ -66,11 +102,16 @@ export default function CatalogoPage() {
     });
   }, [productos, busqueda, categoria, subcategoria, tipo]);
 
-  const porCategoria = filtrados.reduce<Record<string, ProductoCompleto[]>>((acc, p) => {
-    const cat = p.categoria ?? 'Otros';
-    (acc[cat] ??= []).push(p);
+  // Se agrupa por linea (Cavalo Forte, Bendito Loiro...) para los
+  // encabezados de sección — agrupar por categoría no serviría, hoy es un
+  // solo valor ("Tratamientos capilares") para todo el catálogo.
+  const porLinea = filtrados.reduce<Record<string, ProductoCompleto[]>>((acc, p) => {
+    const key = p.linea ?? p.categoria ?? 'Otros';
+    (acc[key] ??= []).push(p);
     return acc;
   }, {});
+
+  const esVistaAdmin = !getUsuario()?.canal;
 
   const hayFiltros = busqueda.trim().length > 0 || categoria !== TODAS || subcategoria !== TODAS || tipo !== TODAS;
 
@@ -146,12 +187,21 @@ export default function CatalogoPage() {
         </p>
       )}
 
-      {Object.entries(porCategoria).map(([cat, items]) => (
-        <div key={cat} className="space-y-2">
-          <h2 className="text-sm font-medium text-bosque">{cat}</h2>
-          <div className="space-y-3">
+      {esVistaAdmin && !cargando && productos.length > 0 && (
+        <p className="rounded-card bg-musgo/10 p-2 text-xs text-bosque/70">
+          Vista previa de administrador: se muestran los productos publicados de todos los canales (los asesores solo ven los de su propio canal).
+        </p>
+      )}
+
+      {Object.entries(porLinea).map(([lineaNombre, items]) => (
+        <div key={lineaNombre} className="space-y-2">
+          <h2 className="text-sm font-medium text-bosque">{lineaNombre}</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {items.map((p) => (
               <article key={p.sku} className="rounded-card bg-white p-3 shadow-sm">
+                {esVistaAdmin && (
+                  <span className="mb-2 inline-block rounded-pill bg-musgo/20 px-2 py-1 text-xs font-medium text-musgo-dark">{p.canal}</span>
+                )}
                 <button className="block w-full text-left" onClick={() => setSeleccionado(p)}>
                   {p.imagenUrl ? (
                     <img src={resolveAssetUrl(p.imagenUrl)} alt={p.nombre ?? p.sku} className="my-3 h-40 w-full rounded-card object-cover" />
@@ -166,10 +216,12 @@ export default function CatalogoPage() {
                   <p className="text-lg font-medium text-acento">S/ {p.precioAsesor.toFixed(2)}</p>
                 </button>
                 <button
-                  onClick={() => agregar({ sku: p.sku, nombre: p.nombre ?? p.sku, precioUnitario: p.precioAsesor })}
-                  className="mt-2 w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white"
+                  onClick={() => agregarConFeedback(p)}
+                  className={`mt-2 w-full rounded-pill py-2 text-sm font-medium text-white transition-colors ${
+                    agregados.has(p.sku) ? 'bg-musgo' : 'bg-bosque'
+                  }`}
                 >
-                  Agregar
+                  {agregados.has(p.sku) ? '✓ Agregado al carrito' : 'Agregar'}
                 </button>
               </article>
             ))}
@@ -181,7 +233,7 @@ export default function CatalogoPage() {
         <ProductoDetalle
           producto={seleccionado}
           onClose={() => setSeleccionado(null)}
-          onAgregar={() => agregar({ sku: seleccionado.sku, nombre: seleccionado.nombre ?? seleccionado.sku, precioUnitario: seleccionado.precioAsesor })}
+          onAgregar={() => agregarConFeedback(seleccionado)}
         />
       )}
     </div>

@@ -89,6 +89,7 @@ export class OrdersService {
         catalogVersion: catalog.version,
         direccionSnapshot: { ...direccion },
         tarifaSnapshot: tarifa.precio,
+        slaHorasSnapshot: tarifa.slaHoras,
         subtotalAsesor: items.reduce((acc, i) => acc + i.precioAsesorUnitario * i.cantidad, 0),
         totalCulqi,
         estado: EstadoPedido.PENDIENTE_PAGO,
@@ -96,6 +97,123 @@ export class OrdersService {
       },
       include: { items: true },
     });
+  }
+
+  /**
+   * Variante de prepararPedidoDesdeCarrito que no depende del modelo Cart
+   * (el carrito de la app hoy vive en el cliente, localStorage) — recibe
+   * directo la lista de items y arma el pedido igual, con la misma
+   * revalidacion de precio/oferta/tarifa (RF-017, RN-038).
+   */
+  async crearPedidoDesdeItems(asesorId: string, itemsSolicitados: { catalogLineId: string; cantidad: number }[]) {
+    if (itemsSolicitados.length === 0) throw new BadRequestException('El carrito está vacío.');
+
+    const asesor = await this.prisma.asesor.findUniqueOrThrow({ where: { id: asesorId }, include: { direcciones: true } });
+    const direccion = asesor.direcciones.find((d) => d.predeterminada) ?? asesor.direcciones[0];
+    if (!direccion) throw new BadRequestException('El asesor no tiene una dirección de entrega registrada.');
+
+    const tarifa = await this.prisma.tarifa.findUnique({ where: { distrito: direccion.distrito } });
+    if (!tarifa || !tarifa.activa) {
+      throw new BadRequestException('El distrito de tu dirección no tiene tarifa de envío activa (RF-016).');
+    }
+
+    const lineas = await this.prisma.catalogLine.findMany({
+      where: { id: { in: itemsSolicitados.map((i) => i.catalogLineId) } },
+      include: { catalog: true },
+    });
+    if (lineas.length !== itemsSolicitados.length) {
+      throw new BadRequestException('Alguno de los productos del carrito ya no existe en el catálogo.');
+    }
+
+    const catalog = lineas[0].catalog;
+    if (lineas.some((l) => l.catalogId !== catalog.id)) {
+      throw new BadRequestException('No se pueden mezclar productos de catálogos de canales diferentes (RN-039).');
+    }
+    if (catalog.estado !== 'PUBLICADO') {
+      throw new BadRequestException('El catálogo ya no está publicado — refrescá el carrito (PA-032).');
+    }
+
+    const items = await Promise.all(
+      itemsSolicitados.map(async ({ catalogLineId, cantidad }) => {
+        const linea = lineas.find((l) => l.id === catalogLineId)!;
+        const porcentaje = await this.pricing.resolverPorcentajeAsesor({
+          campaignId: catalog.campaignId,
+          catalogId: catalog.id,
+          canal: catalog.canal,
+        });
+        const oferta = await this.campaigns.ofertaVigentePara(catalogLineId);
+        const pvpEfectivo = oferta?.precioFijo
+          ? Number(oferta.precioFijo)
+          : oferta?.descuentoPct
+            ? Number(linea.pvpCampania) * (1 - Number(oferta.descuentoPct) / 100)
+            : Number(linea.pvpCampania);
+
+        return {
+          sku: linea.sku,
+          nombre: linea.nombre ?? linea.sku,
+          pvpUnitario: pvpEfectivo,
+          porcentajeAsesorAplicado: porcentaje,
+          precioAsesorUnitario: this.pricing.calcularPrecioAsesor(pvpEfectivo, porcentaje),
+          cantidad,
+          promocionAplicada: oferta ? { ofertaId: oferta.id, tipo: oferta.tipo } : undefined,
+        };
+      }),
+    );
+
+    const totalCulqi = this.pricing.calcularTotalCulqi(
+      items.map((i) => ({ pvpUnitario: i.pvpUnitario, porcentaje: i.porcentajeAsesorAplicado, cantidad: i.cantidad })),
+      Number(tarifa.precio),
+    );
+
+    return this.prisma.order.create({
+      data: {
+        asesorId: asesor.id,
+        canal: catalog.canal,
+        campaignId: catalog.campaignId,
+        catalogId: catalog.id,
+        catalogVersion: catalog.version,
+        direccionSnapshot: { ...direccion },
+        tarifaSnapshot: tarifa.precio,
+        slaHorasSnapshot: tarifa.slaHoras,
+        subtotalAsesor: items.reduce((acc, i) => acc + i.precioAsesorUnitario * i.cantidad, 0),
+        totalCulqi,
+        estado: EstadoPedido.PENDIENTE_PAGO,
+        items: { create: items },
+      },
+      include: { items: true },
+    });
+  }
+
+  /** Para el panel de Gestión → Pagos y Almacén → Despacho: pedidos por estado (todos si no se pide uno). */
+  async listarPedidos(estado?: EstadoPedido) {
+    return this.prisma.order.findMany({
+      where: estado ? { estado } : { estado: { in: [EstadoPedido.PENDIENTE_PAGO, EstadoPedido.PAGADO, EstadoPedido.CANCELADO_DEVUELTO] } },
+      include: { asesor: { include: { user: true } }, items: true, entrega: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Validación manual del pago (RF-018 Yape): el asesor paga por Yape y un
+   * gerente/administrador confirma visualmente que el monto llegó. No hay
+   * webhook de Culqi conectado todavía — es una confirmación humana, no
+   * una verificación automática contra la pasarela. `pagadoEn` es el punto
+   * de partida del plazo de entrega (RF-030).
+   */
+  async validarPagoManual(orderId: string, actorId: string) {
+    await this.prisma.auditLog.create({
+      data: { actorId, accion: 'VALIDAR_PAGO', entidad: 'Order', entidadId: orderId },
+    });
+    // TODO RF-036: una vez con credenciales reales de Odoo, encadenar
+    // confirmarPagoYEnviarAOdoo aca en vez de solo marcar PAGADO.
+    return this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PAGADO, pagadoEn: new Date() } });
+  }
+
+  async rechazarPedido(orderId: string, actorId: string, motivo?: string) {
+    await this.prisma.auditLog.create({
+      data: { actorId, accion: 'RECHAZAR_PEDIDO', entidad: 'Order', entidadId: orderId, motivo },
+    });
+    return this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.CANCELADO_DEVUELTO } });
   }
 
   /** RF-022/RF-036: tras el pago aprobado, confirma el pedido y lo crea en Odoo. Idempotente por referenciaWeb. */

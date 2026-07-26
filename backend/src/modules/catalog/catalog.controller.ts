@@ -22,13 +22,79 @@ export class CatalogController {
     private readonly pricing: PricingService,
   ) {}
 
+  // Roles que administran el catalogo pero no son asesores (sin canal
+  // propio) — pueden previsualizar el catalogo publicado completo, de
+  // todos los canales, para verificar lo que dan de alta en Gestion.
+  private readonly ROLES_PREVIEW_CATALOGO = ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'];
+
+  private async mapearLinea(linea: any, catalogo: any) {
+    const porcentaje = await this.pricing.resolverPorcentajeAsesor({
+      campaignId: catalogo.campaignId,
+      catalogId: catalogo.id,
+      canal: catalogo.canal,
+    });
+    return {
+      id: linea.id,
+      sku: linea.sku,
+      nombre: linea.nombre,
+      categoria: linea.categoria,
+      linea: linea.linea,
+      subcategoria: linea.subcategoria,
+      tipo: linea.tipo,
+      descripcion: linea.descripcion,
+      beneficios: linea.beneficios,
+      propiedades: linea.propiedades,
+      modoUso: linea.modoUso,
+      activos: linea.activos,
+      pvp: Number(linea.pvpCampania),
+      precioAsesor: this.pricing.calcularPrecioAsesor(Number(linea.pvpCampania), porcentaje),
+      destacado: linea.destacado,
+      imagenUrl: linea.imagenUrl,
+      imagenesAdicionales: linea.imagenesAdicionales,
+      canal: catalogo.canal,
+    };
+  }
+
   @Get()
   async catalogoVigente(@Req() req: any, @Query('busqueda') busqueda?: string) {
     const canalDelUsuario = req.user.canal; // proviene del JWT, no del querystring
 
-    // Roles sin Asesor asociado (administrador, almacen, etc.) no tienen
-    // canal — no hay catalogo de asesor que mostrarles.
-    if (!canalDelUsuario) return { canal: null, campania: null, productos: [] };
+    const filtroBusqueda = busqueda
+      ? {
+          OR: [
+            { sku: { contains: busqueda, mode: 'insensitive' as const } },
+            { nombre: { contains: busqueda, mode: 'insensitive' as const } },
+            { categoria: { contains: busqueda, mode: 'insensitive' as const } },
+            { linea: { contains: busqueda, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    // Roles sin Asesor asociado (administrador, gestor de catalogo, etc.):
+    // no tienen canal propio, asi que en vez de un catalogo vacio les
+    // mostramos la union de todo lo publicado (util para verificar lo que
+    // se aprueba/publica en Gestion).
+    if (!canalDelUsuario) {
+      if (!this.ROLES_PREVIEW_CATALOGO.includes(req.user.rol)) {
+        return { canal: null, campania: null, productos: [] };
+      }
+
+      const catalogosPublicados = await this.prisma.catalog.findMany({
+        where: {
+          estado: 'PUBLICADO',
+          vigenciaDesde: { lte: new Date() },
+          vigenciaHasta: { gte: new Date() },
+        },
+        include: { lineas: { where: filtroBusqueda } },
+        orderBy: { version: 'desc' },
+      });
+
+      const productos = (
+        await Promise.all(catalogosPublicados.map((cat) => Promise.all(cat.lineas.map((linea) => this.mapearLinea(linea, cat)))))
+      ).flat();
+
+      return { canal: null, campania: null, productos };
+    }
 
     const catalogo = await this.prisma.catalog.findFirst({
       where: {
@@ -37,51 +103,13 @@ export class CatalogController {
         vigenciaDesde: { lte: new Date() },
         vigenciaHasta: { gte: new Date() },
       },
-      include: {
-        lineas: busqueda
-          ? {
-              where: {
-                OR: [
-                  { sku: { contains: busqueda, mode: 'insensitive' } },
-                  { nombre: { contains: busqueda, mode: 'insensitive' } },
-                  { categoria: { contains: busqueda, mode: 'insensitive' } },
-                ],
-              },
-            }
-          : true,
-      },
+      include: { lineas: { where: filtroBusqueda } },
       orderBy: { version: 'desc' },
     });
 
     if (!catalogo) return { canal: canalDelUsuario, campania: null, productos: [] };
 
-    const productos = await Promise.all(
-      catalogo.lineas.map(async (linea) => {
-        const porcentaje = await this.pricing.resolverPorcentajeAsesor({
-          campaignId: catalogo.campaignId,
-          catalogId: catalogo.id,
-          canal: catalogo.canal,
-        });
-        return {
-          id: linea.id,
-          sku: linea.sku,
-          nombre: linea.nombre,
-          categoria: linea.categoria,
-          subcategoria: linea.subcategoria,
-          tipo: linea.tipo,
-          descripcion: linea.descripcion,
-          beneficios: linea.beneficios,
-          propiedades: linea.propiedades,
-          modoUso: linea.modoUso,
-          activos: linea.activos,
-          pvp: Number(linea.pvpCampania),
-          precioAsesor: this.pricing.calcularPrecioAsesor(Number(linea.pvpCampania), porcentaje),
-          destacado: linea.destacado,
-          imagenUrl: linea.imagenUrl,
-          imagenesAdicionales: linea.imagenesAdicionales,
-        };
-      }),
-    );
+    const productos = await Promise.all(catalogo.lineas.map((linea) => this.mapearLinea(linea, catalogo)));
 
     return { canal: canalDelUsuario, catalogoId: catalogo.id, version: catalogo.version, productos };
   }

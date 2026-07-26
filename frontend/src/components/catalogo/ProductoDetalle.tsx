@@ -8,6 +8,7 @@ export type ProductoCompleto = {
   sku: string;
   nombre: string | null;
   categoria: string | null;
+  linea: string | null;
   subcategoria: string | null;
   tipo: string | null;
   descripcion: string | null;
@@ -19,6 +20,7 @@ export type ProductoCompleto = {
   precioAsesor: number;
   imagenUrl: string | null;
   imagenesAdicionales: string[];
+  canal: string;
 };
 
 type Oferta = { alcance: string; descuentoPct: string | null; precioFijo: string | null; fin: string };
