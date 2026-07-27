@@ -7,12 +7,15 @@
 // defecto) y una clasificación de salud (Atrasado / A tiempo / Postergado).
 
 import { Fragment, useEffect, useState } from 'react';
-import { apiFetch, ApiError } from '../../../lib/api';
+import { apiFetch, ApiError, resolveAssetUrl } from '../../../lib/api';
 
 type Entrega = {
   estado: 'ASIGNADO' | 'ACEPTADO' | 'EN_RUTA' | 'ENTREGADO' | 'FALLIDO';
   transportistaId: string;
   motivoFallo: string | null;
+  receptor: string | null;
+  documentoReceptor: string | null;
+  evidenciaUrl: string | null;
   updatedAt: string;
 };
 
@@ -75,6 +78,8 @@ export function DespachoSection() {
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState(false);
   const [receptor, setReceptor] = useState('');
+  const [documentoReceptor, setDocumentoReceptor] = useState('');
+  const [fotoEvidencia, setFotoEvidencia] = useState<File | null>(null);
   const [motivoDevolucion, setMotivoDevolucion] = useState(MOTIVOS_DEVOLUCION[0]);
   const [observaciones, setObservaciones] = useState('');
   const [accionEntrega, setAccionEntrega] = useState<{ id: string; tipo: 'entregar' | 'devolver' } | null>(null);
@@ -145,13 +150,27 @@ export function DespachoSection() {
       setError('Ingresá quién recibió el pedido.');
       return;
     }
+    if (!documentoReceptor.trim()) {
+      setError('Ingresá el DNI de quién recibió.');
+      return;
+    }
+    if (!fotoEvidencia) {
+      setError('Subí una foto de evidencia de la entrega.');
+      return;
+    }
     setError(null);
     setProcesando(true);
     try {
-      await apiFetch(`/operaciones/pedidos/${p.id}/entrega/confirmar`, { method: 'POST', body: { receptor } });
+      const formData = new FormData();
+      formData.append('receptor', receptor);
+      formData.append('documentoReceptor', documentoReceptor);
+      formData.append('foto', fotoEvidencia);
+      await apiFetch(`/operaciones/pedidos/${p.id}/entrega/confirmar`, { method: 'POST', body: formData, isFormData: true });
       await cargar();
       setAccionEntrega(null);
       setReceptor('');
+      setDocumentoReceptor('');
+      setFotoEvidencia(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo confirmar la entrega.');
     } finally {
@@ -247,7 +266,24 @@ export function DespachoSection() {
                         {horas !== null ? `${horas.toFixed(1)}h${p.slaHorasSnapshot ? ` / ${p.slaHorasSnapshot}h` : ''}` : '—'}
                       </td>
                       <td className="px-3 py-2">
-                        {p.entrega?.estado === 'ENTREGADO' ? `✓ ${new Date(p.entrega.updatedAt).toLocaleString('es-PE')}` : '—'}
+                        {p.entrega?.estado === 'ENTREGADO' ? (
+                          <div>
+                            <p>✓ {new Date(p.entrega.updatedAt).toLocaleString('es-PE')}</p>
+                            <p className="text-xs text-bosque/50">
+                              {p.entrega.receptor} · DNI {p.entrega.documentoReceptor ?? '—'}
+                              {p.entrega.evidenciaUrl && (
+                                <>
+                                  {' · '}
+                                  <a href={resolveAssetUrl(p.entrega.evidenciaUrl)} target="_blank" rel="noreferrer" className="text-acento underline">
+                                    ver foto
+                                  </a>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {p.entrega?.estado === 'FALLIDO' ? p.entrega.motivoFallo ?? 'Sin motivo registrado' : '—'}
@@ -294,12 +330,38 @@ export function DespachoSection() {
                                 placeholder="Nombre de quién recibió"
                                 value={receptor}
                                 onChange={(e) => setReceptor(e.target.value)}
-                                className="flex-1 rounded-pill border border-musgo/30 px-3 py-1.5 text-xs"
+                                className="rounded-pill border border-musgo/30 px-3 py-1.5 text-xs"
                               />
+                              <input
+                                placeholder="DNI de quién recibió"
+                                value={documentoReceptor}
+                                onChange={(e) => setDocumentoReceptor(e.target.value)}
+                                className="w-32 rounded-pill border border-musgo/30 px-3 py-1.5 text-xs"
+                              />
+                              <label className="cursor-pointer rounded-pill bg-crema px-3 py-1.5 text-xs font-medium text-bosque">
+                                {fotoEvidencia ? `📷 ${fotoEvidencia.name.slice(0, 16)}` : '📷 Tomar/subir foto'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  className="hidden"
+                                  onChange={(e) => setFotoEvidencia(e.target.files?.[0] ?? null)}
+                                />
+                              </label>
                               <button onClick={() => confirmarEntregaFinal(p)} disabled={procesando} className="rounded-pill bg-bosque px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60">
-                                Confirmar entrega
+                                {procesando ? 'Confirmando…' : 'Confirmar entrega'}
                               </button>
-                              <button onClick={() => setAccionEntrega(null)} className="rounded-pill bg-white px-3 py-1.5 text-xs text-bosque shadow-sm">Cancelar</button>
+                              <button
+                                onClick={() => {
+                                  setAccionEntrega(null);
+                                  setReceptor('');
+                                  setDocumentoReceptor('');
+                                  setFotoEvidencia(null);
+                                }}
+                                className="rounded-pill bg-white px-3 py-1.5 text-xs text-bosque shadow-sm"
+                              >
+                                Cancelar
+                              </button>
                             </div>
                           ) : (
                             <div className="flex flex-wrap items-center gap-2">

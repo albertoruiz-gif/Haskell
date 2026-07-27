@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { OperacionesService } from './operaciones.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { multerEntregaConfig } from '../../common/upload/multer-entrega.config';
 
 @Controller('operaciones')
 @UseGuards(RolesGuard)
@@ -44,10 +46,21 @@ export class OperacionesController {
     return this.operacionesService.marcarEnRuta(id);
   }
 
+  // Multipart: el transportista sube la foto de evidencia (RF-028/DP-010)
+  // junto con el nombre y DNI de quien recibe, en un solo paso desde el celular.
   @Post('pedidos/:id/entrega/confirmar')
   @Roles('TRANSPORTISTA', 'ADMINISTRADOR')
-  confirmarEntrega(@Param('id') id: string, @Body() dto: { receptor: string; documentoReceptor?: string; evidenciaUrl?: string }) {
-    return this.operacionesService.confirmarEntrega(id, dto);
+  @UseInterceptors(FileInterceptor('foto', multerEntregaConfig))
+  confirmarEntrega(
+    @Param('id') id: string,
+    @Body() dto: { receptor: string; documentoReceptor?: string },
+    @UploadedFile() foto?: Express.Multer.File,
+  ) {
+    return this.operacionesService.confirmarEntrega(id, {
+      receptor: dto.receptor,
+      documentoReceptor: dto.documentoReceptor,
+      evidenciaUrl: foto ? `/uploads/entregas/${foto.filename}` : undefined,
+    });
   }
 
   @Post('pedidos/:id/entrega/fallida')

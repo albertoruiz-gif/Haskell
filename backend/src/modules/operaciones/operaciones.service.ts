@@ -107,7 +107,9 @@ export class OperacionesService {
   // Al entregar se congela el pago al transportista (tarifa fija por
   // entrega, elegida sobre pago por zona o registro manual sin fórmula).
   async confirmarEntrega(orderId: string, data: { receptor: string; documentoReceptor?: string; evidenciaUrl?: string }) {
-    if (!data.receptor) throw new BadRequestException('La entrega requiere al menos receptor y fecha/hora (RF-028).');
+    if (!data.receptor) throw new BadRequestException('La entrega requiere el nombre de quién recibió (RF-028).');
+    if (!data.documentoReceptor) throw new BadRequestException('La entrega requiere el DNI de quién recibió.');
+    if (!data.evidenciaUrl) throw new BadRequestException('La entrega requiere una foto de evidencia.');
     const entregaActual = await this.prisma.entrega.findUniqueOrThrow({ where: { orderId }, include: { transportista: true } });
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO } });
     return this.prisma.entrega.update({
