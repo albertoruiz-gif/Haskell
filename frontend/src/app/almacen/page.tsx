@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
+import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
 type Pedido = {
   id: string;
@@ -117,7 +118,7 @@ export default function AlmacenPage() {
     return (
       <div className="space-y-3">
         <h1 className="text-lg font-medium text-bosque">Almacén</h1>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        <ErrorBanner mensaje={error} />
         {cargando && <p className="text-xs text-bosque/50">Cargando pedidos…</p>}
         {!cargando && pedidos.length === 0 && <p className="text-xs text-bosque/50">No hay pedidos pagados esperando picking/packing.</p>}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -175,7 +176,7 @@ export default function AlmacenPage() {
         ))}
       </div>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      <ErrorBanner mensaje={error} />
 
       {seleccionado.estado === 'PAGADO' && (
         <div className="rounded-card bg-white p-3 shadow-sm">

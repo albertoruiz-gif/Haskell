@@ -1,14 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import { saveSession, Usuario } from '../../lib/auth';
+import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
 const ROLES_ADMIN = ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'];
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sesionVencida = searchParams.get('motivo') === 'sesion_vencida';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +40,12 @@ export default function LoginPage() {
       <form onSubmit={onSubmit} className="w-full space-y-3 rounded-card bg-white p-4 shadow-sm">
         <h1 className="text-lg font-medium text-bosque">Iniciar sesión</h1>
 
+        {sesionVencida && (
+          <p className="rounded-card bg-musgo/10 p-2 text-xs text-bosque/70">
+            Tu sesión venció por seguridad — iniciá sesión de nuevo para seguir.
+          </p>
+        )}
+
         <div>
           <label className="text-xs font-medium uppercase text-bosque/60">Email</label>
           <input
@@ -59,7 +68,7 @@ export default function LoginPage() {
           />
         </div>
 
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        <ErrorBanner mensaje={error} />
 
         <button
           type="submit"

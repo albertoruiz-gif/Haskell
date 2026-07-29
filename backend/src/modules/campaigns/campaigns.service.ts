@@ -125,10 +125,16 @@ export class CampaignsService {
     });
   }
 
-  /** Listado para el panel de administrador (pestaña Ofertas). */
+  /**
+   * Listado para el panel de administrador (pestaña Ofertas) — ahora es
+   * solo lectura: crear/desactivar una oferta vive en la ficha de cada
+   * producto ("Ver ficha completa" en Catálogo/Precios), así que acá alcanza
+   * con traer también el producto (sku/nombre) para poder mostrarlo.
+   */
   async listarOfertas(catalogId?: string) {
     return this.prisma.offer.findMany({
       where: catalogId ? { catalogId } : undefined,
+      include: { catalogLine: { select: { sku: true, nombre: true } } },
       orderBy: { createdAt: 'desc' },
     });
   }

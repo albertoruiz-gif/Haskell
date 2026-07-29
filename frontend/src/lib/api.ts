@@ -1,4 +1,4 @@
-import { getToken } from './auth';
+import { getToken, clearSession } from './auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api';
 // Los archivos subidos (fotos de producto) se sirven fuera del prefijo /api
@@ -39,6 +39,15 @@ export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Pro
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
+    // El token JWT vence a las 8h (RNF-007). Sin esto, cada pantalla que
+    // llama a la API mostraba el texto crudo "Unauthorized" en vez de
+    // llevar de nuevo al login — la sesión vencida parecía una pantalla rota.
+    if (res.status === 401 && typeof window !== 'undefined') {
+      clearSession();
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login?motivo=sesion_vencida';
+      }
+    }
     throw new ApiError(data.message ?? `Error ${res.status}`, res.status);
   }
   if (res.status === 204) return undefined as T;

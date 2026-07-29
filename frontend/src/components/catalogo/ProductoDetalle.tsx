@@ -20,6 +20,7 @@ export type ProductoCompleto = {
   precioAsesor: number;
   imagenUrl: string | null;
   imagenesAdicionales: string[];
+  componentes: { id: string; sku: string; nombre: string | null; imagenUrl: string | null }[];
   canal: string;
 };
 
@@ -132,6 +133,24 @@ export function ProductoDetalle({
             <div>
               <p className="text-xs font-medium uppercase text-bosque/60">Descripción</p>
               <p className="mt-1 text-sm text-bosque">{producto.descripcion}</p>
+            </div>
+          )}
+
+          {producto.componentes.length > 0 && (
+            <div>
+              <p className="text-xs font-medium uppercase text-bosque/60">Este pack incluye</p>
+              <div className="mt-1 space-y-1">
+                {producto.componentes.map((c) => (
+                  <div key={c.id} className="flex items-center gap-2 rounded-card bg-crema p-1.5">
+                    {c.imagenUrl ? (
+                      <img src={resolveAssetUrl(c.imagenUrl)} alt="" className="h-8 w-8 shrink-0 rounded-card object-cover" />
+                    ) : (
+                      <div className="h-8 w-8 shrink-0 rounded-card border border-dashed border-musgo/30" />
+                    )}
+                    <p className="text-xs text-bosque">{c.nombre ?? c.sku}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

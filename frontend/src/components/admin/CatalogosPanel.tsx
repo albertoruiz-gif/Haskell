@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
+import { ErrorBanner } from '../ui/ErrorBanner';
 
 const CANALES = ['SALONES_BELLEZA', 'RETAIL', 'COMERCIO_MINORISTA'];
 
@@ -32,14 +33,24 @@ export function CatalogosPanel({ onCambio }: { onCambio: () => void }) {
       ]);
       setCampanias(c);
       setCatalogos(cat);
+      return cat;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar campañas/catálogos.');
+      return null;
     }
   }
 
   useEffect(() => {
-    cargar();
+    // Este panel es el primer paso obligatorio: sin campaña+catálogo acá,
+    // el resto de "Catálogo/Precios" no tiene nada para editar. Antes
+    // arrancaba cerrado y se veía como una configuración secundaria — se
+    // abre solo la primera vez que no hay ningún catálogo todavía.
+    cargar().then((cat) => {
+      if (cat && cat.length === 0) setAbierto(true);
+    });
   }, []);
+
+  const esPrimerPaso = catalogos.length === 0;
 
   function toggleCanal(canal: string) {
     setFormCampania((f) => ({
@@ -99,15 +110,20 @@ export function CatalogosPanel({ onCambio }: { onCambio: () => void }) {
   };
 
   return (
-    <div className="rounded-card bg-white p-3 shadow-sm">
+    <div className={esPrimerPaso ? 'rounded-card border-2 border-acento bg-white p-3 shadow-sm' : 'rounded-card bg-white p-3 shadow-sm'}>
       <button onClick={() => setAbierto((a) => !a)} className="flex w-full items-center justify-between text-left">
-        <p className="text-sm font-medium text-bosque">Campañas y catálogos</p>
-        <span className="text-xs text-bosque/50">{abierto ? 'Ocultar ▲' : 'Mostrar ▼'}</span>
+        <div>
+          <p className="text-sm font-medium text-bosque">
+            {esPrimerPaso ? 'Primer paso: creá tu campaña y catálogo' : 'Campañas y catálogos'}
+          </p>
+          {esPrimerPaso && <p className="text-xs text-bosque/50">Hasta que no haya un catálogo acá, no hay nada para editar en las pestañas de productos.</p>}
+        </div>
+        <span className="shrink-0 text-xs text-bosque/50">{abierto ? 'Ocultar ▲' : 'Mostrar ▼'}</span>
       </button>
 
       {abierto && (
         <div className="mt-3 space-y-3">
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          <ErrorBanner mensaje={error} />
 
           {campanias.map((camp) => {
             const catalogosDeCampania = catalogos.filter((c) => c.campaign.nombre === camp.nombre);

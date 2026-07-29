@@ -12,6 +12,7 @@ import { apiFetch, ApiError, resolveAssetUrl } from '../../lib/api';
 import { getUsuario } from '../../lib/auth';
 import { useCart } from '../../components/cart/CartContext';
 import { ProductoDetalle, ProductoCompleto } from '../../components/catalogo/ProductoDetalle';
+import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
 type RespuestaCatalogo = { canal: string | null; catalogoId?: string; productos: ProductoCompleto[] };
 
@@ -169,7 +170,7 @@ export default function CatalogoPage() {
         </div>
       </div>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      <ErrorBanner mensaje={error} />
       {cargando && <p className="text-xs text-bosque/50">Cargando catálogo…</p>}
       {!cargando && !error && (
         <p className="text-xs text-bosque/50">
@@ -199,9 +200,14 @@ export default function CatalogoPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {items.map((p) => (
               <article key={p.sku} className="rounded-card bg-white p-3 shadow-sm">
-                {esVistaAdmin && (
-                  <span className="mb-2 inline-block rounded-pill bg-musgo/20 px-2 py-1 text-xs font-medium text-musgo-dark">{p.canal}</span>
-                )}
+                <div className="mb-2 flex gap-1">
+                  {esVistaAdmin && (
+                    <span className="inline-block rounded-pill bg-musgo/20 px-2 py-1 text-xs font-medium text-musgo-dark">{p.canal}</span>
+                  )}
+                  {p.componentes.length > 0 && (
+                    <span className="inline-block rounded-pill bg-acento/15 px-2 py-1 text-xs font-medium text-acento">Pack</span>
+                  )}
+                </div>
                 <button className="block w-full text-left" onClick={() => setSeleccionado(p)}>
                   {p.imagenUrl ? (
                     <img src={resolveAssetUrl(p.imagenUrl)} alt={p.nombre ?? p.sku} className="my-3 h-40 w-full rounded-card object-cover" />

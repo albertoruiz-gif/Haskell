@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
+import { ErrorBanner } from '../ui/ErrorBanner';
 
 const CANALES = ['SALONES_BELLEZA', 'RETAIL', 'COMERCIO_MINORISTA'];
 
@@ -123,7 +124,7 @@ export function AsesoresTab() {
             ))}
           </select>
         </div>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        <ErrorBanner mensaje={error} />
         <button type="submit" disabled={guardando} className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white disabled:opacity-60">
           {guardando ? 'Guardando…' : 'Crear asesor'}
         </button>

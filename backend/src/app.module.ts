@@ -14,6 +14,7 @@ import { OperacionesModule } from './modules/operaciones/operaciones.module';
 import { TransportistasModule } from './modules/transportistas/transportistas.module';
 import { TarifasModule } from './modules/tarifas/tarifas.module';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module';
+import { CatalogosDigitalesModule } from './modules/catalogos-digitales/catalogos-digitales.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -35,6 +36,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     TransportistasModule,
     TarifasModule,
     IntegracionesModule,
+    CatalogosDigitalesModule,
   ],
   controllers: [HealthController],
   providers: [

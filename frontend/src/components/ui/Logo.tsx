@@ -1,14 +1,8 @@
-// Logotipo de texto — no hay un archivo de logo real en el proyecto
-// (ningún .png/.svg de marca en el repo). Si en algún momento se agrega
-// uno, este componente es el único lugar a cambiar.
+// Logo oficial de Haskell Cosméticos (frontend/public/logo-haskell.webp).
+// Único lugar donde se usa — si el archivo cambia, alcanza con reemplazar
+// ese .webp o actualizar la ruta acá.
 
 export function Logo() {
-  return (
-    <div className="flex shrink-0 items-center gap-2">
-      <span className="flex h-8 w-8 items-center justify-center rounded-pill bg-bosque text-sm font-bold text-white">H</span>
-      <span className="text-base font-semibold tracking-tight text-bosque">
-        Haskell<span className="text-acento">.</span>
-      </span>
-    </div>
-  );
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/logo-haskell.webp" alt="Haskell Cosméticos" className="h-10 w-auto shrink-0" />;
 }

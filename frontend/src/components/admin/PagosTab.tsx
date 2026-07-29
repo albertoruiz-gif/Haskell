@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
+import { ErrorBanner } from '../ui/ErrorBanner';
 
 type Pedido = {
   id: string;
@@ -74,7 +75,7 @@ export function PagosTab() {
   return (
     <div className="space-y-2">
       <p className="text-xs text-bosque/60">El asesor paga por Yape y acá se confirma manualmente que el pago llegó.</p>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      <ErrorBanner mensaje={error} />
       {cargando && <p className="text-xs text-bosque/50">Cargando…</p>}
       {!cargando && pedidos.length === 0 && <p className="text-xs text-bosque/50">Todavía no hay pedidos.</p>}
 

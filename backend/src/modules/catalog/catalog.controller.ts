@@ -33,6 +33,15 @@ export class CatalogController {
       catalogId: catalogo.id,
       canal: catalogo.canal,
     });
+    // Pack simple: si tiene componentes, se resuelven a sku/nombre/foto para
+    // mostrar "este pack incluye..." en la ficha — el pack en sí se vende
+    // como un producto normal, esto es solo informativo.
+    const componentes = linea.componentesIds?.length
+      ? await this.prisma.catalogLine.findMany({
+          where: { id: { in: linea.componentesIds } },
+          select: { id: true, sku: true, nombre: true, imagenUrl: true },
+        })
+      : [];
     return {
       id: linea.id,
       sku: linea.sku,
@@ -51,6 +60,7 @@ export class CatalogController {
       destacado: linea.destacado,
       imagenUrl: linea.imagenUrl,
       imagenesAdicionales: linea.imagenesAdicionales,
+      componentes,
       canal: catalogo.canal,
     };
   }

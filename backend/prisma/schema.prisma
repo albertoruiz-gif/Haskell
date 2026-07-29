@@ -227,6 +227,11 @@ model CatalogLine {
   pvpCampania              Decimal  @db.Decimal(10, 2)
   imagenUrl                String?
   imagenesAdicionales      String[] @default([])
+  // Pack simple: lista de ids de otras CatalogLine que este producto
+  // incluye — solo informativo (se muestra en la ficha), el pack se vende
+  // y tiene oferta como cualquier producto normal, sin descuento de stock
+  // por componente.
+  componentesIds           String[] @default([])
   ordenVisualizacion        Int      @default(0)
   destacado                 Boolean  @default(false)
   cantidadMaximaPorAsesor   Int?
@@ -398,4 +403,20 @@ model AuditLog {
   createdAt       DateTime @default(now())
 
   @@map("audit_logs")
+}
+
+// Catálogo digital editorial (tipo flipbook Yanbal) — se arma por fuera de
+// la plataforma y se sube como .zip (index.html + imágenes) para publicarlo
+// con una URL propia. No tiene relación con Catalog/CatalogLine: ese es el
+// catálogo operativo con precios por canal que usan los asesores para
+// vender; este es solo un sitio estático para compartir con clientes.
+model CatalogoDigital {
+  id          String   @id @default(cuid())
+  nombre      String
+  raiz        String   @default("") // subcarpeta dentro del zip donde vive index.html, si no está en la raíz
+  activo      Boolean  @default(true)
+  subidoPorId String?
+  createdAt   DateTime @default(now())
+
+  @@map("catalogos_digitales")
 }

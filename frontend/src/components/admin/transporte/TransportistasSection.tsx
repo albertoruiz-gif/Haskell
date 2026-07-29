@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../../lib/api';
+import { ErrorBanner } from '../../ui/ErrorBanner';
 
 type Transportista = {
   id: string;
@@ -88,7 +89,7 @@ export function TransportistasSection() {
           <input placeholder="Placa (opcional)" value={form.placa} onChange={(e) => setForm((f) => ({ ...f, placa: e.target.value }))} className="rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
         </div>
         <input required type="number" step="0.01" placeholder="Pago fijo por entrega (S/)" value={form.tarifaPorEntrega} onChange={(e) => setForm((f) => ({ ...f, tarifaPorEntrega: e.target.value }))} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        <ErrorBanner mensaje={error} />
         <button type="submit" disabled={guardando} className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white disabled:opacity-60">
           {guardando ? 'Guardando…' : 'Crear transportista'}
         </button>

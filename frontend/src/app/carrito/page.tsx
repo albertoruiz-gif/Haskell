@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import { useCart } from '../../components/cart/CartContext';
+import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
 type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number };
 
@@ -172,7 +173,7 @@ export default function CarritoPage() {
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          <ErrorBanner mensaje={error} />
 
           <button
             onClick={pagar}

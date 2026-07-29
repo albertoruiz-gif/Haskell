@@ -4,26 +4,26 @@ import { useEffect, useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../lib/api';
 import { EditarProductoModal, LineaAdmin } from './EditarProductoModal';
 import { CatalogosPanel } from './CatalogosPanel';
+import { ErrorBanner } from '../ui/ErrorBanner';
 
 type Catalogo = { id: string; canal: string; version: number; estado: string; campaign: { nombre: string } };
 type Linea = LineaAdmin;
 
-export function CatalogoPreciosTab() {
+type Props = { catalogoId: string; onCambiarCatalogo: (id: string) => void };
+
+export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
   const [catalogos, setCatalogos] = useState<Catalogo[]>([]);
-  const [catalogoId, setCatalogoId] = useState('');
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [nuevoSku, setNuevoSku] = useState('');
-  const [nuevaCategoria, setNuevaCategoria] = useState('');
-  const [nuevoPrecio, setNuevoPrecio] = useState('');
   const [precios, setPrecios] = useState<Record<string, string>>({});
   const [editando, setEditando] = useState<Linea | null>(null);
+  const [creando, setCreando] = useState(false);
 
   async function cargarCatalogos() {
     try {
       const data = await apiFetch<Catalogo[]>('/campaigns/catalogos');
       setCatalogos(data);
-      setCatalogoId((actual) => actual || (data.length > 0 ? data[0].id : ''));
+      if (!catalogoId && data.length > 0) onCambiarCatalogo(data[0].id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar los catálogos.');
     }
@@ -49,23 +49,6 @@ export function CatalogoPreciosTab() {
   useEffect(() => {
     cargarLineas(catalogoId);
   }, [catalogoId]);
-
-  async function crearLinea(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await apiFetch('/catalogo/admin/lineas', {
-        method: 'POST',
-        body: { catalogId: catalogoId, sku: nuevoSku, categoria: nuevaCategoria || undefined, pvpCampania: Number(nuevoPrecio) },
-      });
-      setNuevoSku('');
-      setNuevaCategoria('');
-      setNuevoPrecio('');
-      await cargarLineas(catalogoId);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo crear el producto.');
-    }
-  }
 
   async function guardarPrecio(id: string) {
     setError(null);
@@ -101,26 +84,30 @@ export function CatalogoPreciosTab() {
         </p>
       ) : (
         <>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="rounded-card bg-white p-3 shadow-sm">
+      {catalogos.length > 1 ? (
+        <div className="rounded-card bg-white p-3 shadow-sm lg:max-w-sm">
           <label className="text-xs font-medium uppercase text-bosque/60">Catálogo</label>
-          <select value={catalogoId} onChange={(e) => setCatalogoId(e.target.value)} className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
+          <select value={catalogoId} onChange={(e) => onCambiarCatalogo(e.target.value)} className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
             {catalogos.map((c) => (
               <option key={c.id} value={c.id}>{c.campaign.nombre} · {c.canal} · v{c.version} · {c.estado}</option>
             ))}
           </select>
         </div>
+      ) : (
+        <p className="text-xs text-bosque/50">
+          Catálogo: <span className="font-medium text-bosque">{catalogos[0].campaign.nombre} · {catalogos[0].canal} · v{catalogos[0].version} · {catalogos[0].estado}</span>
+        </p>
+      )}
 
-        <form onSubmit={crearLinea} className="space-y-2 rounded-card bg-white p-3 shadow-sm">
-          <p className="text-sm font-medium text-bosque">Nuevo producto</p>
-          <input required placeholder="SKU" value={nuevoSku} onChange={(e) => setNuevoSku(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-          <input placeholder="Categoría (opcional)" value={nuevaCategoria} onChange={(e) => setNuevaCategoria(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-          <input required type="number" step="0.01" placeholder="Precio" value={nuevoPrecio} onChange={(e) => setNuevoPrecio(e.target.value)} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-          <button type="submit" className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">Agregar producto</button>
-        </form>
+      <div className="rounded-card bg-white p-3 shadow-sm lg:max-w-sm">
+        <p className="text-sm font-medium text-bosque">Producto nuevo</p>
+        <p className="mt-1 text-xs text-bosque/50">El portafolio de Haskell ya está cargado — esto es para cuando se suma un producto que todavía no existe.</p>
+        <button onClick={() => setCreando(true)} className="mt-2 w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">
+          + Nuevo producto
+        </button>
       </div>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      <ErrorBanner mensaje={error} />
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {lineas.map((l) => (
@@ -159,7 +146,7 @@ export function CatalogoPreciosTab() {
               onClick={() => setEditando(l)}
               className="mt-2 w-full rounded-pill bg-crema py-2 text-xs font-medium text-bosque"
             >
-              Editar ficha completa / eliminar / oferta
+              Ver ficha completa ›
             </button>
           </div>
         ))}
@@ -169,6 +156,7 @@ export function CatalogoPreciosTab() {
       {editando && (
         <EditarProductoModal
           linea={editando}
+          productosDisponibles={lineas}
           onClose={() => setEditando(null)}
           onGuardado={() => {
             setEditando(null);
@@ -178,6 +166,20 @@ export function CatalogoPreciosTab() {
             setEditando(null);
             cargarLineas(catalogoId);
           }}
+        />
+      )}
+
+      {creando && (
+        <EditarProductoModal
+          linea={null}
+          catalogId={catalogoId}
+          productosDisponibles={lineas}
+          onClose={() => setCreando(false)}
+          onGuardado={() => {
+            setCreando(false);
+            cargarLineas(catalogoId);
+          }}
+          onEliminado={() => setCreando(false)}
         />
       )}
         </>

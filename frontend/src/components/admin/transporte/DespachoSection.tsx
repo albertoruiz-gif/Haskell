@@ -8,6 +8,7 @@
 
 import { Fragment, useEffect, useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../../lib/api';
+import { ErrorBanner } from '../../ui/ErrorBanner';
 
 type Entrega = {
   estado: 'ASIGNADO' | 'ACEPTADO' | 'EN_RUTA' | 'ENTREGADO' | 'FALLIDO';
@@ -202,7 +203,7 @@ export function DespachoSection() {
 
   return (
     <div className="space-y-3">
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      <ErrorBanner mensaje={error} />
       {cargando && <p className="text-xs text-bosque/50">Cargando…</p>}
       {!cargando && filas.length === 0 && <p className="text-xs text-bosque/50">No hay pedidos empacados ni en despacho todavía.</p>}
 

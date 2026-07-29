@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../../lib/api';
+import { ErrorBanner } from '../../ui/ErrorBanner';
 
 type Tarifa = { id: string; distrito: string; zona: string | null; precio: string; slaHoras: number; activa: boolean };
 
@@ -127,7 +128,7 @@ export function TarifarioSection() {
           <input required type="number" step="0.01" placeholder="Precio envío (S/)" value={form.precio} onChange={(e) => setForm((f) => ({ ...f, precio: e.target.value }))} className="rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
           <input required type="number" placeholder="Plazo (horas)" value={form.slaHoras} onChange={(e) => setForm((f) => ({ ...f, slaHoras: e.target.value }))} className="rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
         </div>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        <ErrorBanner mensaje={error} />
         <button type="submit" className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">Agregar distrito</button>
       </form>
       </div>

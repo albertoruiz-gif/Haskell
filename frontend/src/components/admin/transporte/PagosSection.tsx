@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../../lib/api';
+import { ErrorBanner } from '../../ui/ErrorBanner';
 
 type PagoEntrega = {
   id: string;
@@ -74,7 +75,7 @@ export function PagosSection() {
         </label>
       </div>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      <ErrorBanner mensaje={error} />
       {cargando && <p className="text-xs text-bosque/50">Cargando…</p>}
 
       {soloPendientes && Object.keys(totalesPorTransportista).length > 0 && (

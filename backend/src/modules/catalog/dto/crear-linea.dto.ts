@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class CrearLineaDto {
   @IsString()
@@ -52,4 +52,11 @@ export class CrearLineaDto {
   @IsNumber()
   @IsPositive()
   pvpCampania!: number;
+
+  // Pack simple: ids de otras líneas de este mismo catálogo que este
+  // producto incluye — solo informativo, ver comentario en schema.prisma.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  componentesIds?: string[];
 }

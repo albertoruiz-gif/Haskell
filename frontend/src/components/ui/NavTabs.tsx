@@ -15,6 +15,23 @@ const TABS = [
   { href: '/delivery', label: 'Delivery' },
 ];
 
+// Qué pestañas puede usar cada rol, según los permisos reales del backend
+// (RolesGuard de cada módulo) — antes se mostraban las cinco a todo el
+// mundo y varias rechazaban al entrar. Un rol sin mapeo no ve ninguna
+// pestaña extra (además de Cerrar sesión), en vez de mostrar las cinco por
+// las dudas.
+const TABS_POR_ROL: Record<string, string[]> = {
+  ASESOR: ['/catalogo', '/carrito'],
+  VENDEDOR: ['/catalogo', '/carrito'],
+  LIDER_MINORISTA: ['/catalogo', '/carrito'],
+  ADMINISTRADOR: ['/catalogo', '/gestion', '/almacen', '/delivery'],
+  GERENTE_COMERCIAL: ['/catalogo', '/gestion'],
+  GESTOR_CATALOGO: ['/catalogo', '/gestion'],
+  FINANZAS: ['/gestion'],
+  ALMACEN: ['/almacen', '/delivery'],
+  TRANSPORTISTA: ['/delivery'],
+};
+
 /**
  * Tabs superiores con la píldora magenta activa, tal como en los mockups
  * compartidos. Cada rol ve el subconjunto que le corresponde (RFD 3.2) —
@@ -40,10 +57,12 @@ export function NavTabs() {
     router.push('/login');
   }
 
+  const tabsVisibles = usuario ? TABS.filter((tab) => (TABS_POR_ROL[usuario.rol] ?? []).includes(tab.href)) : [];
+
   function Tabs() {
     return (
       <>
-        {TABS.map((tab) => {
+        {tabsVisibles.map((tab) => {
           const activo = pathname?.startsWith(tab.href);
           return (
             <Link
