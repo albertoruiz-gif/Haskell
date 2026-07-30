@@ -1,18 +1,16 @@
 'use client';
 
-// Ofertas ya no se crean acá — cada oferta es propia de un producto y se
-// crea/desactiva desde "Ver ficha completa" en Catálogo/Precios (evita el
-// duplicado de tener dos formularios distintos para lo mismo, ver
-// auditoría UX). Esta pantalla es la hoja de registro: todas las ofertas
-// juntas, activas e inactivas, con "Relanzar" para volver a activar una
-// vencida con nuevas fechas/descuento — relanzar crea una oferta NUEVA
-// (la vieja queda de historial), no pisa el registro anterior.
+// "Ofertas y Packs" — mecánica comercial de los productos, separada de sus
+// datos de catálogo (que viven en Catálogo/Precios). Ofertas: descuento
+// temporal sobre UN producto. Packs: un producto cuyo precio se arma solo,
+// sumando el de sus componentes con un % de descuento propio de cada uno.
 
 import { useState, useEffect } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
 import { ErrorBanner } from '../ui/ErrorBanner';
-
-const ALCANCES = ['DIA', 'SEMANA', 'MES'];
+import { NuevaOfertaModal } from './NuevaOfertaModal';
+import { PacksSection } from './PacksSection';
+import { LineaAdmin } from './EditarProductoModal';
 
 type Oferta = {
   id: string;
@@ -27,15 +25,22 @@ type Oferta = {
   catalogLine: { sku: string; nombre: string | null } | null;
 };
 
-type Props = { onIrACatalogoPrecios: () => void };
+type Vista = 'ofertas' | 'packs';
 
-export function OfertasTab({ onIrACatalogoPrecios }: Props) {
+type Catalogo = { id: string };
+
+type Props = { catalogoId: string; onCambiarCatalogo: (id: string) => void; onIrACatalogoPrecios: () => void };
+
+export function OfertasTab({ catalogoId, onCambiarCatalogo, onIrACatalogoPrecios }: Props) {
+  const [vista, setVista] = useState<Vista>('ofertas');
   const [ofertas, setOfertas] = useState<Oferta[]>([]);
+  const [lineas, setLineas] = useState<LineaAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
   const [relanzando, setRelanzando] = useState<Oferta | null>(null);
+  const [creandoOferta, setCreandoOferta] = useState(false);
 
-  async function cargar() {
+  async function cargarOfertas() {
     setCargando(true);
     try {
       const data = await apiFetch<Oferta[]>('/campaigns/ofertas');
@@ -47,15 +52,45 @@ export function OfertasTab({ onIrACatalogoPrecios }: Props) {
     }
   }
 
+  async function cargarLineas() {
+    if (!catalogoId) {
+      setLineas([]);
+      return;
+    }
+    try {
+      const data = await apiFetch<LineaAdmin[]>(`/catalogo/admin/lineas?catalogId=${catalogoId}`);
+      setLineas(data);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cargar los productos del catálogo.');
+    }
+  }
+
   useEffect(() => {
-    cargar();
+    cargarOfertas();
   }, []);
+
+  // El catálogo activo es compartido con Catálogo/Precios (ver Gestión) —
+  // si se entra acá primero, sin haber pasado por esa pestaña, todavía no
+  // hay ninguno elegido. Se autoselecciona el primero para no depender del
+  // orden en que se visitan las pestañas.
+  useEffect(() => {
+    if (catalogoId) return;
+    apiFetch<Catalogo[]>('/campaigns/catalogos')
+      .then((data) => {
+        if (data.length > 0) onCambiarCatalogo(data[0].id);
+      })
+      .catch(() => {});
+  }, [catalogoId]);
+
+  useEffect(() => {
+    cargarLineas();
+  }, [catalogoId]);
 
   async function desactivar(id: string) {
     setError(null);
     try {
       await apiFetch(`/campaigns/ofertas/${id}/desactivar`, { method: 'POST' });
-      await cargar();
+      await cargarOfertas();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo desactivar la oferta.');
     }
@@ -78,7 +113,7 @@ export function OfertasTab({ onIrACatalogoPrecios }: Props) {
         },
       });
       setRelanzando(null);
-      await cargar();
+      await cargarOfertas();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo relanzar la oferta.');
     }
@@ -91,77 +126,134 @@ export function OfertasTab({ onIrACatalogoPrecios }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="rounded-card bg-musgo/10 p-3 text-xs text-bosque/70">
-        Las ofertas se crean por producto: entrá a un producto en <strong>Catálogo/Precios</strong> → "Ver ficha
-        completa" → Oferta. Acá se ven todas juntas y se pueden relanzar.
+      <div className="flex gap-2">
+        <button
+          onClick={() => setVista('ofertas')}
+          className={vista === 'ofertas' ? 'rounded-pill bg-bosque px-4 py-1.5 text-xs font-medium text-white' : 'rounded-pill bg-white px-4 py-1.5 text-xs text-bosque shadow-sm'}
+        >
+          Ofertas
+        </button>
+        <button
+          onClick={() => setVista('packs')}
+          className={vista === 'packs' ? 'rounded-pill bg-bosque px-4 py-1.5 text-xs font-medium text-white' : 'rounded-pill bg-white px-4 py-1.5 text-xs text-bosque shadow-sm'}
+        >
+          Packs
+        </button>
       </div>
 
-      <ErrorBanner mensaje={error} />
-      {cargando && <p className="text-xs text-bosque/50">Cargando…</p>}
+      {vista === 'ofertas' && (
+        <div className="space-y-3">
+          <div className="rounded-card bg-white p-3 shadow-sm lg:max-w-sm">
+            <p className="text-sm font-medium text-bosque">Nueva oferta</p>
+            <p className="mt-1 text-xs text-bosque/50">Descuento temporal sobre un producto puntual.</p>
+            <button
+              onClick={() => setCreandoOferta(true)}
+              disabled={!catalogoId}
+              className="mt-2 w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              + Nueva oferta
+            </button>
+          </div>
 
-      {!cargando && ofertas.length === 0 && (
-        <div className="rounded-card bg-white p-3 text-xs text-bosque/60 shadow-sm">
-          <p>Todavía no hay ninguna oferta creada.</p>
-          <button onClick={onIrACatalogoPrecios} className="mt-2 rounded-pill bg-bosque px-3 py-1.5 text-xs font-medium text-white">
-            Ir a Catálogo/Precios →
-          </button>
+          <ErrorBanner mensaje={error} />
+          {cargando && <p className="text-xs text-bosque/50">Cargando…</p>}
+
+          {!cargando && ofertas.length === 0 && (
+            <div className="rounded-card bg-white p-3 text-xs text-bosque/60 shadow-sm">
+              <p>Todavía no hay ninguna oferta creada.</p>
+              {!catalogoId && (
+                <button onClick={onIrACatalogoPrecios} className="mt-2 rounded-pill bg-bosque px-3 py-1.5 text-xs font-medium text-white">
+                  Ir a Catálogo/Precios →
+                </button>
+              )}
+            </div>
+          )}
+
+          {!cargando && ofertas.length > 0 && (
+            <div className="overflow-x-auto rounded-card bg-white shadow-sm">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="border-b border-musgo/15 text-left text-[11px] font-medium uppercase text-bosque/50">
+                    <th className="px-3 py-2">Producto</th>
+                    <th className="px-3 py-2">Descuento</th>
+                    <th className="px-3 py-2">Alcance</th>
+                    <th className="px-3 py-2">Vigencia</th>
+                    <th className="px-3 py-2">Estado</th>
+                    <th className="px-3 py-2">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ofertas.map((o) => {
+                    const estado = o.activa ? 'Activa' : 'Vencida';
+                    return (
+                      <tr key={o.id} className="border-b border-musgo/10 last:border-0">
+                        <td className="px-3 py-2 font-medium text-bosque">
+                          {o.catalogLine ? (o.catalogLine.nombre ?? o.catalogLine.sku) : 'Todo el catálogo'}
+                        </td>
+                        <td className="px-3 py-2 text-bosque/70">
+                          {o.descuentoPct ? `${Number(o.descuentoPct)}% dcto.` : `S/ ${Number(o.precioFijo).toFixed(2)} fijo`}
+                        </td>
+                        <td className="px-3 py-2 text-bosque/70">{o.alcance}</td>
+                        <td className="px-3 py-2 text-xs text-bosque/60">
+                          {new Date(o.inicio).toLocaleDateString('es-PE')} → {new Date(o.fin).toLocaleDateString('es-PE')}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`rounded-pill px-2 py-0.5 text-[11px] font-medium ${ESTADO_COLOR[estado]}`}>{estado}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          {o.activa ? (
+                            <button onClick={() => desactivar(o.id)} className="rounded-pill bg-crema px-3 py-1 text-xs font-medium text-acento">
+                              Desactivar
+                            </button>
+                          ) : (
+                            <button onClick={() => setRelanzando(o)} className="rounded-pill bg-acento px-3 py-1 text-xs font-medium text-white">
+                              Relanzar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      {!cargando && ofertas.length > 0 && (
-        <div className="overflow-x-auto rounded-card bg-white shadow-sm">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-musgo/15 text-left text-[11px] font-medium uppercase text-bosque/50">
-                <th className="px-3 py-2">Producto</th>
-                <th className="px-3 py-2">Descuento</th>
-                <th className="px-3 py-2">Alcance</th>
-                <th className="px-3 py-2">Vigencia</th>
-                <th className="px-3 py-2">Estado</th>
-                <th className="px-3 py-2">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ofertas.map((o) => {
-                const estado = o.activa ? 'Activa' : 'Vencida';
-                return (
-                  <tr key={o.id} className="border-b border-musgo/10 last:border-0">
-                    <td className="px-3 py-2 font-medium text-bosque">
-                      {o.catalogLine ? (o.catalogLine.nombre ?? o.catalogLine.sku) : 'Todo el catálogo'}
-                    </td>
-                    <td className="px-3 py-2 text-bosque/70">
-                      {o.descuentoPct ? `${Number(o.descuentoPct)}% dcto.` : `S/ ${Number(o.precioFijo).toFixed(2)} fijo`}
-                    </td>
-                    <td className="px-3 py-2 text-bosque/70">{o.alcance}</td>
-                    <td className="px-3 py-2 text-xs text-bosque/60">
-                      {new Date(o.inicio).toLocaleDateString('es-PE')} → {new Date(o.fin).toLocaleDateString('es-PE')}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`rounded-pill px-2 py-0.5 text-[11px] font-medium ${ESTADO_COLOR[estado]}`}>{estado}</span>
-                    </td>
-                    <td className="px-3 py-2">
-                      {o.activa ? (
-                        <button onClick={() => desactivar(o.id)} className="rounded-pill bg-crema px-3 py-1 text-xs font-medium text-acento">
-                          Desactivar
-                        </button>
-                      ) : (
-                        <button onClick={() => setRelanzando(o)} className="rounded-pill bg-acento px-3 py-1 text-xs font-medium text-white">
-                          Relanzar
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {vista === 'packs' && (
+        <>
+          {!catalogoId ? (
+            <div className="rounded-card bg-white p-3 text-xs text-bosque/60 shadow-sm">
+              <p>Elegí un catálogo primero en Catálogo/Precios.</p>
+              <button onClick={onIrACatalogoPrecios} className="mt-2 rounded-pill bg-bosque px-3 py-1.5 text-xs font-medium text-white">
+                Ir a Catálogo/Precios →
+              </button>
+            </div>
+          ) : (
+            <PacksSection catalogoId={catalogoId} lineas={lineas} onCambio={cargarLineas} />
+          )}
+        </>
       )}
 
       {relanzando && <RelanzarOfertaModal oferta={relanzando} onClose={() => setRelanzando(null)} onConfirmar={relanzar} />}
+
+      {creandoOferta && (
+        <NuevaOfertaModal
+          catalogoId={catalogoId}
+          lineas={lineas}
+          onClose={() => setCreandoOferta(false)}
+          onCreada={() => {
+            setCreandoOferta(false);
+            cargarOfertas();
+          }}
+        />
+      )}
     </div>
   );
 }
+
+const ALCANCES = ['DIA', 'SEMANA', 'MES'];
 
 function RelanzarOfertaModal({
   oferta,

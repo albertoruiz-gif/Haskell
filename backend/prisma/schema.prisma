@@ -227,20 +227,35 @@ model CatalogLine {
   pvpCampania              Decimal  @db.Decimal(10, 2)
   imagenUrl                String?
   imagenesAdicionales      String[] @default([])
-  // Pack simple: lista de ids de otras CatalogLine que este producto
-  // incluye — solo informativo (se muestra en la ficha), el pack se vende
-  // y tiene oferta como cualquier producto normal, sin descuento de stock
-  // por componente.
-  componentesIds           String[] @default([])
   ordenVisualizacion        Int      @default(0)
   destacado                 Boolean  @default(false)
   cantidadMaximaPorAsesor   Int?
 
   ofertas                  Offer[]
   cartItems                 CartItem[]
+  // Si tiene filas acá, este producto ES un pack — su pvpCampania se
+  // calcula sumando cada componente ya con el descuento propio del pack
+  // (independiente de la oferta normal que el componente pueda tener por
+  // separado). Se arma/edita desde Gestión → Ofertas y Packs.
+  packComponentes          PackComponente[] @relation("PackComponentes")
+  // Packs de los que este producto es componente (para mostrar "incluido en" en su ficha)
+  parteDePacks             PackComponente[] @relation("ComponenteDePacks")
 
   @@unique([catalogId, sku])
   @@map("catalog_lines")
+}
+
+model PackComponente {
+  id            String      @id @default(cuid())
+  packId        String
+  pack          CatalogLine @relation("PackComponentes", fields: [packId], references: [id])
+  componenteId  String
+  componente    CatalogLine @relation("ComponenteDePacks", fields: [componenteId], references: [id])
+  descuentoPct  Decimal     @default(0) @db.Decimal(5, 2) // % de descuento sobre el precio del componente, propio de este pack
+  createdAt     DateTime    @default(now())
+
+  @@unique([packId, componenteId])
+  @@map("pack_componentes")
 }
 
 // Ofertas temporales (dia/semana/mes) — adenda v0.3, extiende RF-043/RF-044

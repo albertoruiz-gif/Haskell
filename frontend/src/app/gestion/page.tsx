@@ -19,7 +19,7 @@ const TABS = [
   { id: 'asesores', label: 'Asesores' },
   { id: 'catalogo', label: 'Catálogo/Precios' },
   { id: 'catalogo-digital', label: 'Revista Digital' },
-  { id: 'ofertas', label: 'Ofertas' },
+  { id: 'ofertas', label: 'Ofertas y Packs' },
   { id: 'transporte', label: 'Transporte' },
 ] as const;
 
@@ -106,7 +106,9 @@ export default function GestionPage() {
       {tab === 'asesores' && <AsesoresTab />}
       {tab === 'catalogo' && <CatalogoPreciosTab catalogoId={catalogoActivoId} onCambiarCatalogo={setCatalogoActivoId} />}
       {tab === 'catalogo-digital' && <CatalogoDigitalTab />}
-      {tab === 'ofertas' && <OfertasTab onIrACatalogoPrecios={() => setTab('catalogo')} />}
+      {tab === 'ofertas' && (
+        <OfertasTab catalogoId={catalogoActivoId} onCambiarCatalogo={setCatalogoActivoId} onIrACatalogoPrecios={() => setTab('catalogo')} />
+      )}
       {tab === 'transporte' && <TransporteTab />}
     </div>
   );

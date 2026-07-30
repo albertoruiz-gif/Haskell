@@ -1,8 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../lib/api';
 import { ErrorBanner } from '../ui/ErrorBanner';
+
+export type PackComponenteAdmin = {
+  id: string;
+  descuentoPct: string;
+  componente: { id: string; sku: string; nombre: string | null; pvpCampania: string };
+};
 
 export type LineaAdmin = {
   id: string;
@@ -21,14 +27,10 @@ export type LineaAdmin = {
   pvpCampania: string;
   imagenUrl: string | null;
   imagenesAdicionales: string[];
-  componentesIds: string[];
+  packComponentes: PackComponenteAdmin[];
 };
 
-type Oferta = { id: string; alcance: string; descuentoPct: string | null; precioFijo: string | null; inicio: string; fin: string; activa: boolean };
-
-const ALCANCES = ['DIA', 'SEMANA', 'MES'];
-
-function Campo({ label, value, onChange, textarea }: { label: string; value: string; onChange: (v: string) => void; textarea?: boolean }) {
+function Campo({ label, value, onChange, textarea, disabled }: { label: string; value: string; onChange: (v: string) => void; textarea?: boolean; disabled?: boolean }) {
   return (
     <div>
       <label className="block text-xs font-medium uppercase text-bosque/60">{label}</label>
@@ -37,13 +39,15 @@ function Campo({ label, value, onChange, textarea }: { label: string; value: str
           value={value}
           onChange={(e) => onChange(e.target.value)}
           rows={2}
-          className="mt-1 w-full rounded-card border border-musgo/30 px-3 py-2 text-sm"
+          disabled={disabled}
+          className="mt-1 w-full rounded-card border border-musgo/30 px-3 py-2 text-sm disabled:bg-crema disabled:text-bosque/50"
         />
       ) : (
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
+          disabled={disabled}
+          className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm disabled:bg-crema disabled:text-bosque/50"
         />
       )}
     </div>
@@ -53,7 +57,6 @@ function Campo({ label, value, onChange, textarea }: { label: string; value: str
 export function EditarProductoModal({
   linea,
   catalogId,
-  productosDisponibles,
   onClose,
   onGuardado,
   onEliminado,
@@ -63,14 +66,12 @@ export function EditarProductoModal({
   // obligatorio en ese caso porque todavía no hay una línea de la que sacarlo.
   linea: LineaAdmin | null;
   catalogId?: string;
-  // Para armar packs: productos ya cargados en el catálogo, para elegir
-  // cuáles incluye este (ver auditoría UX / pedido de packs).
-  productosDisponibles: LineaAdmin[];
   onClose: () => void;
   onGuardado: () => void;
   onEliminado: () => void;
 }) {
   const esNuevo = linea === null;
+  const esPack = !esNuevo && linea.packComponentes.length > 0;
   const [sku, setSku] = useState(linea?.sku ?? '');
   const [form, setForm] = useState({
     nombre: linea?.nombre ?? '',
@@ -85,24 +86,9 @@ export function EditarProductoModal({
     modoUso: linea?.modoUso ?? '',
     pvpCampania: linea?.pvpCampania ?? '',
   });
-  const [componentesIds, setComponentesIds] = useState<string[]>(linea?.componentesIds ?? []);
-  const [buscarComponente, setBuscarComponente] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [eliminando, setEliminando] = useState(false);
-  const [oferta, setOferta] = useState<Oferta | null | undefined>(undefined);
-  const [formOferta, setFormOferta] = useState({ alcance: ALCANCES[0], descuentoPct: '', precioFijo: '', inicio: '', fin: '' });
-
-  function toggleComponente(id: string) {
-    setComponentesIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
-  }
-
-  useEffect(() => {
-    if (!linea) return;
-    apiFetch<Oferta | null>(`/campaigns/ofertas/vigente?catalogLineId=${linea.id}`)
-      .then(setOferta)
-      .catch(() => setOferta(null));
-  }, [esNuevo, linea?.id]);
 
   function setCampo(campo: keyof typeof form, valor: string) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -120,16 +106,18 @@ export function EditarProductoModal({
     }
     setGuardando(true);
     try {
-      const { lineaProducto, ...resto } = form;
+      const { lineaProducto, pvpCampania, ...resto } = form;
       if (!linea) {
         await apiFetch('/catalogo/admin/lineas', {
           method: 'POST',
-          body: { ...resto, catalogId, sku: sku.trim(), linea: lineaProducto, pvpCampania: Number(form.pvpCampania), componentesIds },
+          body: { ...resto, catalogId, sku: sku.trim(), linea: lineaProducto, pvpCampania: Number(pvpCampania) },
         });
       } else {
+        // El precio de un pack se recalcula solo desde sus componentes
+        // (Gestión → Ofertas y Packs) — mandarlo acá lo pisaría al toque.
         await apiFetch(`/catalogo/admin/lineas/${linea.id}`, {
           method: 'PATCH',
-          body: { ...resto, linea: lineaProducto, pvpCampania: Number(form.pvpCampania), componentesIds },
+          body: esPack ? { ...resto, linea: lineaProducto } : { ...resto, linea: lineaProducto, pvpCampania: Number(pvpCampania) },
         });
       }
       onGuardado();
@@ -168,36 +156,6 @@ export function EditarProductoModal({
     Array.from(archivos).forEach((f) => fd.append('fotos', f));
     await apiFetch(`/catalogo/admin/lineas/${linea.id}/fotos-adicionales`, { method: 'POST', body: fd, isFormData: true });
     onGuardado();
-  }
-
-  async function crearOferta(e: React.FormEvent) {
-    e.preventDefault();
-    if (!linea) return;
-    setError(null);
-    try {
-      await apiFetch('/campaigns/ofertas', {
-        method: 'POST',
-        body: {
-          catalogId: linea.catalogId,
-          catalogLineId: linea.id,
-          alcance: formOferta.alcance,
-          descuentoPct: formOferta.descuentoPct ? Number(formOferta.descuentoPct) : undefined,
-          precioFijo: formOferta.precioFijo ? Number(formOferta.precioFijo) : undefined,
-          inicio: new Date(formOferta.inicio).toISOString(),
-          fin: new Date(formOferta.fin).toISOString(),
-        },
-      });
-      const nueva = await apiFetch<Oferta | null>(`/campaigns/ofertas/vigente?catalogLineId=${linea.id}`);
-      setOferta(nueva);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo crear la oferta.');
-    }
-  }
-
-  async function desactivarOferta() {
-    if (!oferta) return;
-    await apiFetch(`/campaigns/ofertas/${oferta.id}/desactivar`, { method: 'POST' });
-    setOferta(null);
   }
 
   return (
@@ -248,59 +206,17 @@ export function EditarProductoModal({
             <Campo label="Subcategoría" value={form.subcategoria} onChange={(v) => setCampo('subcategoria', v)} />
             <Campo label="Tipo" value={form.tipo} onChange={(v) => setCampo('tipo', v)} />
           </div>
-          <Campo label="Precio (PVP campaña)" value={form.pvpCampania} onChange={(v) => setCampo('pvpCampania', v)} />
+          <Campo label="Precio (PVP campaña)" value={form.pvpCampania} onChange={(v) => setCampo('pvpCampania', v)} disabled={esPack} />
+          {esPack && (
+            <p className="-mt-2 text-[11px] text-bosque/40">
+              Este producto es un pack — su precio se calcula solo sumando sus componentes. Editalo desde Gestión → Ofertas y Packs.
+            </p>
+          )}
           <Campo label="Descripción" value={form.descripcion} onChange={(v) => setCampo('descripcion', v)} textarea />
           <Campo label="Beneficios (separar con |)" value={form.beneficios} onChange={(v) => setCampo('beneficios', v)} textarea />
           <Campo label="Propiedades (separar con |)" value={form.propiedades} onChange={(v) => setCampo('propiedades', v)} textarea />
           <Campo label="Activos (separar con |)" value={form.activos} onChange={(v) => setCampo('activos', v)} textarea />
           <Campo label="Modo de uso" value={form.modoUso} onChange={(v) => setCampo('modoUso', v)} textarea />
-
-          <div>
-            <label className="block text-xs font-medium uppercase text-bosque/60">Contenido del pack (opcional)</label>
-            <p className="mt-0.5 text-[11px] text-bosque/40">
-              Elegí productos ya cargados si este es un pack — es solo para mostrar qué incluye; el precio y la oferta del pack se manejan igual que en cualquier producto.
-            </p>
-            {componentesIds.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {componentesIds.map((id) => {
-                  const p = productosDisponibles.find((x) => x.id === id);
-                  return (
-                    <span key={id} className="flex items-center gap-1 rounded-pill bg-musgo/15 px-2 py-1 text-[11px] text-bosque">
-                      {p ? (p.nombre ?? p.sku) : id}
-                      <button type="button" onClick={() => toggleComponente(id)} className="text-bosque/50 hover:text-acento">✕</button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            <input
-              placeholder="Buscar producto para agregar…"
-              value={buscarComponente}
-              onChange={(e) => setBuscarComponente(e.target.value)}
-              className="mt-2 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
-            />
-            {buscarComponente.trim() && (
-              <div className="mt-1 max-h-40 space-y-0.5 overflow-y-auto rounded-card border border-musgo/15 bg-white p-1">
-                {productosDisponibles
-                  .filter((p) => p.id !== linea?.id && !componentesIds.includes(p.id))
-                  .filter((p) => `${p.nombre ?? ''} ${p.sku}`.toLowerCase().includes(buscarComponente.trim().toLowerCase()))
-                  .slice(0, 8)
-                  .map((p) => (
-                    <button
-                      type="button"
-                      key={p.id}
-                      onClick={() => {
-                        toggleComponente(p.id);
-                        setBuscarComponente('');
-                      }}
-                      className="block w-full rounded-card px-2 py-1.5 text-left text-xs hover:bg-crema"
-                    >
-                      {p.nombre ?? p.sku} <span className="text-bosque/40">({p.sku})</span>
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
 
           <ErrorBanner mensaje={error} />
 
@@ -315,38 +231,6 @@ export function EditarProductoModal({
             )}
           </div>
         </div>
-
-        {linea && (
-        <div className="mt-3 space-y-2 rounded-card bg-white p-3 shadow-sm">
-          <p className="text-sm font-medium text-bosque">Oferta</p>
-          {oferta === undefined && <p className="text-xs text-bosque/50">Consultando…</p>}
-          {oferta === null && <p className="text-xs text-bosque/50">Este producto no tiene una oferta activa.</p>}
-          {oferta && (
-            <div className="flex items-center justify-between rounded-card bg-crema p-2">
-              <p className="text-xs text-bosque">
-                {oferta.descuentoPct ? `-${Number(oferta.descuentoPct)}%` : `S/ ${Number(oferta.precioFijo)} fijo`} · {oferta.alcance} · vence {new Date(oferta.fin).toLocaleDateString('es-PE')}
-              </p>
-              <button onClick={desactivarOferta} className="rounded-pill bg-white px-3 py-1 text-xs font-medium text-acento shadow-sm">Desactivar</button>
-            </div>
-          )}
-          {!oferta && (
-            <form onSubmit={crearOferta} className="space-y-2">
-              <select value={formOferta.alcance} onChange={(e) => setFormOferta((f) => ({ ...f, alcance: e.target.value }))} className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm">
-                {ALCANCES.map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
-              <div className="grid grid-cols-2 gap-2">
-                <input type="number" step="0.01" placeholder="% descuento" value={formOferta.descuentoPct} onChange={(e) => setFormOferta((f) => ({ ...f, descuentoPct: e.target.value }))} className="rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-                <input type="number" step="0.01" placeholder="Precio fijo" value={formOferta.precioFijo} onChange={(e) => setFormOferta((f) => ({ ...f, precioFijo: e.target.value }))} className="rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input required type="datetime-local" value={formOferta.inicio} onChange={(e) => setFormOferta((f) => ({ ...f, inicio: e.target.value }))} className="rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-                <input required type="datetime-local" value={formOferta.fin} onChange={(e) => setFormOferta((f) => ({ ...f, fin: e.target.value }))} className="rounded-pill border border-musgo/30 px-3 py-2 text-sm" />
-              </div>
-              <button type="submit" className="w-full rounded-pill bg-acento py-2 text-sm font-medium text-white">Crear oferta para este producto</button>
-            </form>
-          )}
-        </div>
-        )}
       </div>
     </div>
   );

@@ -20,7 +20,7 @@ export type ProductoCompleto = {
   precioAsesor: number;
   imagenUrl: string | null;
   imagenesAdicionales: string[];
-  componentes: { id: string; sku: string; nombre: string | null; imagenUrl: string | null }[];
+  componentes: { id: string; sku: string; nombre: string | null; imagenUrl: string | null; descuentoPct: number }[];
   canal: string;
 };
 

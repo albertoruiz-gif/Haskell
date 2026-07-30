@@ -5,6 +5,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { CrearLineaDto } from './dto/crear-linea.dto';
 import { ActualizarPrecioDto } from './dto/actualizar-precio.dto';
 import { ActualizarLineaDto } from './dto/actualizar-linea.dto';
+import { DefinirPackDto } from './dto/definir-pack.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { multerCatalogConfig } from '../../common/upload/multer-catalog.config';
@@ -33,15 +34,17 @@ export class CatalogController {
       catalogId: catalogo.id,
       canal: catalogo.canal,
     });
-    // Pack simple: si tiene componentes, se resuelven a sku/nombre/foto para
+    // Pack: si tiene componentes, se resuelven a sku/nombre/foto para
     // mostrar "este pack incluye..." en la ficha — el pack en sí se vende
-    // como un producto normal, esto es solo informativo.
-    const componentes = linea.componentesIds?.length
-      ? await this.prisma.catalogLine.findMany({
-          where: { id: { in: linea.componentesIds } },
-          select: { id: true, sku: true, nombre: true, imagenUrl: true },
-        })
-      : [];
+    // como un producto normal (su pvpCampania ya viene calculado sumando
+    // los componentes con su descuento propio, ver definirPack()).
+    const componentes = (linea.packComponentes ?? []).map((pc: any) => ({
+      id: pc.componente.id,
+      sku: pc.componente.sku,
+      nombre: pc.componente.nombre,
+      imagenUrl: pc.componente.imagenUrl,
+      descuentoPct: Number(pc.descuentoPct),
+    }));
     return {
       id: linea.id,
       sku: linea.sku,
@@ -95,7 +98,7 @@ export class CatalogController {
           vigenciaDesde: { lte: new Date() },
           vigenciaHasta: { gte: new Date() },
         },
-        include: { lineas: { where: filtroBusqueda } },
+        include: { lineas: { where: filtroBusqueda, include: { packComponentes: { include: { componente: true } } } } },
         orderBy: { version: 'desc' },
       });
 
@@ -113,7 +116,7 @@ export class CatalogController {
         vigenciaDesde: { lte: new Date() },
         vigenciaHasta: { gte: new Date() },
       },
-      include: { lineas: { where: filtroBusqueda } },
+      include: { lineas: { where: filtroBusqueda, include: { packComponentes: { include: { componente: true } } } } },
       orderBy: { version: 'desc' },
     });
 
@@ -133,6 +136,7 @@ export class CatalogController {
   listarLineas(@Query('catalogId') catalogId?: string) {
     return this.prisma.catalogLine.findMany({
       where: catalogId ? { catalogId } : undefined,
+      include: { packComponentes: { include: { componente: { select: { id: true, sku: true, nombre: true, pvpCampania: true } } } } },
       orderBy: { ordenVisualizacion: 'asc' },
     });
   }
@@ -145,8 +149,58 @@ export class CatalogController {
 
   @Patch('admin/lineas/:id/precio')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
-  actualizarPrecio(@Param('id') id: string, @Body() dto: ActualizarPrecioDto) {
-    return this.prisma.catalogLine.update({ where: { id }, data: { pvpCampania: dto.pvpCampania } });
+  async actualizarPrecio(@Param('id') id: string, @Body() dto: ActualizarPrecioDto) {
+    const linea = await this.prisma.catalogLine.update({ where: { id }, data: { pvpCampania: dto.pvpCampania } });
+    // Este producto puede ser componente de uno o más packs — su precio
+    // acaba de cambiar, así que los packs que lo incluyen quedarían con un
+    // total desactualizado si no se recalculan acá.
+    await this.recalcularPacksQueUsanComponente(id);
+    return linea;
+  }
+
+  // RN pack: el precio del pack se calcula sumando cada componente ya con
+  // el % de descuento propio de ESE pack (no la oferta normal del
+  // componente) — se recalcula cada vez que se guarda la composición del
+  // pack o cambia el precio base de alguno de sus componentes.
+  @Patch('admin/lineas/:id/pack')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  async definirPack(@Param('id') packId: string, @Body() dto: DefinirPackDto) {
+    if (dto.componentes.some((c) => c.catalogLineId === packId)) {
+      throw new BadRequestException('Un pack no puede incluirse a sí mismo como componente.');
+    }
+    await this.prisma.$transaction([
+      this.prisma.packComponente.deleteMany({ where: { packId } }),
+      ...(dto.componentes.length > 0
+        ? [
+            this.prisma.packComponente.createMany({
+              data: dto.componentes.map((c) => ({ packId, componenteId: c.catalogLineId, descuentoPct: c.descuentoPct })),
+            }),
+          ]
+        : []),
+    ]);
+    return this.recalcularPrecioPack(packId);
+  }
+
+  private async recalcularPrecioPack(packId: string) {
+    const componentes = await this.prisma.packComponente.findMany({
+      where: { packId },
+      include: { componente: { select: { pvpCampania: true } } },
+    });
+    if (componentes.length === 0) {
+      return this.prisma.catalogLine.findUniqueOrThrow({ where: { id: packId } });
+    }
+    const total = componentes.reduce(
+      (acc, c) => acc + Number(c.componente.pvpCampania) * (1 - Number(c.descuentoPct) / 100),
+      0,
+    );
+    return this.prisma.catalogLine.update({ where: { id: packId }, data: { pvpCampania: Math.round(total * 100) / 100 } });
+  }
+
+  private async recalcularPacksQueUsanComponente(componenteId: string) {
+    const afectados = await this.prisma.packComponente.findMany({ where: { componenteId }, select: { packId: true } });
+    for (const { packId } of afectados) {
+      await this.recalcularPrecioPack(packId);
+    }
   }
 
   @Patch('admin/lineas/:id')
@@ -169,6 +223,14 @@ export class CatalogController {
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
   async eliminarLinea(@Param('id') id: string) {
     await this.prisma.offer.deleteMany({ where: { catalogLineId: id } });
+    // Si este producto es componente de algún pack, hay que sacarlo de ahí
+    // y recalcular el precio de esos packs — si no, quedarían con un total
+    // que ya no corresponde a lo que realmente incluyen.
+    const packsAfectados = await this.prisma.packComponente.findMany({ where: { componenteId: id }, select: { packId: true } });
+    await this.prisma.packComponente.deleteMany({ where: { OR: [{ packId: id }, { componenteId: id }] } });
+    for (const { packId } of packsAfectados) {
+      await this.recalcularPrecioPack(packId);
+    }
     try {
       await this.prisma.catalogLine.delete({ where: { id } });
     } catch {

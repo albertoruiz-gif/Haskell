@@ -9,7 +9,9 @@
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "seed:catalogo": "ts-node prisma/seeds/catalogo.seed.ts",
+    "seed:demo": "ts-node prisma/seeds/demo-data.seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.637.0",

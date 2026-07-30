@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../lib/api';
 import { EditarProductoModal, LineaAdmin } from './EditarProductoModal';
 import { CatalogosPanel } from './CatalogosPanel';
+import { FiltrosCatalogo } from '../catalogo/FiltrosCatalogo';
+import { useFiltrosCatalogo } from '../../lib/useFiltrosCatalogo';
 import { ErrorBanner } from '../ui/ErrorBanner';
 
 type Catalogo = { id: string; canal: string; version: number; estado: string; campaign: { nombre: string } };
@@ -18,6 +20,22 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
   const [precios, setPrecios] = useState<Record<string, string>>({});
   const [editando, setEditando] = useState<Linea | null>(null);
   const [creando, setCreando] = useState(false);
+
+  const {
+    busqueda,
+    setBusqueda,
+    categoria,
+    setCategoria,
+    categorias,
+    subcategoria,
+    setSubcategoria,
+    subcategorias,
+    tipo,
+    setTipo,
+    tipos,
+    filtrados,
+    hayFiltros,
+  } = useFiltrosCatalogo(lineas);
 
   async function cargarCatalogos() {
     try {
@@ -80,7 +98,7 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
 
       {catalogos.length === 0 ? (
         <p className="rounded-card bg-white p-3 text-xs text-bosque/60 shadow-sm">
-          Todavía no hay ningún catálogo — abrí "Campañas y catálogos" arriba para crear uno.
+          Todavía no hay ningún catálogo — abrí &quot;Campañas y catálogos&quot; arriba para crear uno.
         </p>
       ) : (
         <>
@@ -109,10 +127,35 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
 
       <ErrorBanner mensaje={error} />
 
+      <FiltrosCatalogo
+        busqueda={busqueda}
+        onBusqueda={setBusqueda}
+        categoria={categoria}
+        onCategoria={setCategoria}
+        categorias={categorias}
+        subcategoria={subcategoria}
+        onSubcategoria={setSubcategoria}
+        subcategorias={subcategorias}
+        tipo={tipo}
+        onTipo={setTipo}
+        tipos={tipos}
+      />
+
+      {lineas.length > 0 && (
+        <p className="text-xs text-bosque/50">
+          {hayFiltros ? `${filtrados.length} de ${lineas.length} productos` : `${lineas.length} productos`}
+        </p>
+      )}
+
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {lineas.map((l) => (
+        {filtrados.map((l) => {
+          const esPack = l.packComponentes.length > 0;
+          return (
           <div key={l.id} className="rounded-card bg-white p-3 shadow-sm">
-            <p className="text-sm font-medium">{l.nombre ?? l.sku}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium">{l.nombre ?? l.sku}</p>
+              {esPack && <span className="rounded-pill bg-acento/15 px-2 py-0.5 text-[11px] font-medium text-acento">Pack</span>}
+            </div>
             <p className="text-xs text-bosque/50">{l.sku} {l.linea && <>· {l.linea}</>}</p>
 
             {l.imagenUrl ? (
@@ -129,18 +172,24 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
               className="w-full text-xs"
             />
 
-            <div className="mt-2 flex gap-2">
-              <input
-                type="number"
-                step="0.01"
-                defaultValue={l.pvpCampania}
-                onChange={(e) => setPrecios((p) => ({ ...p, [l.id]: e.target.value }))}
-                className="flex-1 rounded-pill border border-musgo/30 px-3 py-2 text-sm"
-              />
-              <button onClick={() => guardarPrecio(l.id)} className="rounded-pill bg-acento px-4 py-2 text-xs font-medium text-white">
-                Guardar precio
-              </button>
-            </div>
+            {esPack ? (
+              <p className="mt-2 rounded-card bg-crema px-3 py-2 text-sm text-bosque">
+                S/ {Number(l.pvpCampania).toFixed(2)} <span className="text-xs text-bosque/50">· calculado desde sus componentes</span>
+              </p>
+            ) : (
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  defaultValue={l.pvpCampania}
+                  onChange={(e) => setPrecios((p) => ({ ...p, [l.id]: e.target.value }))}
+                  className="flex-1 rounded-pill border border-musgo/30 px-3 py-2 text-sm"
+                />
+                <button onClick={() => guardarPrecio(l.id)} className="rounded-pill bg-acento px-4 py-2 text-xs font-medium text-white">
+                  Guardar precio
+                </button>
+              </div>
+            )}
 
             <button
               onClick={() => setEditando(l)}
@@ -149,14 +198,17 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
               Ver ficha completa ›
             </button>
           </div>
-        ))}
+          );
+        })}
         {lineas.length === 0 && <p className="text-xs text-bosque/50">Este catálogo todavía no tiene productos.</p>}
+        {lineas.length > 0 && filtrados.length === 0 && (
+          <p className="text-xs text-bosque/50">Ningún producto coincide con los filtros elegidos.</p>
+        )}
       </div>
 
       {editando && (
         <EditarProductoModal
           linea={editando}
-          productosDisponibles={lineas}
           onClose={() => setEditando(null)}
           onGuardado={() => {
             setEditando(null);
@@ -173,7 +225,6 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
         <EditarProductoModal
           linea={null}
           catalogId={catalogoId}
-          productosDisponibles={lineas}
           onClose={() => setCreando(false)}
           onGuardado={() => {
             setCreando(false);

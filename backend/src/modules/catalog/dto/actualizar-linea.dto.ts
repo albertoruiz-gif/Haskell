@@ -1,4 +1,4 @@
-import { IsArray, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class ActualizarLineaDto {
   @IsOptional()
@@ -45,9 +45,4 @@ export class ActualizarLineaDto {
   @IsNumber()
   @IsPositive()
   pvpCampania?: number;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  componentesIds?: string[];
 }

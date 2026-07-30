@@ -7,29 +7,20 @@
 // elegir un producto se abre su ficha completa (fotos, descripción,
 // beneficios, propiedades, precio y oferta vigente si hay).
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../lib/api';
 import { getUsuario } from '../../lib/auth';
 import { useCart } from '../../components/cart/CartContext';
 import { ProductoDetalle, ProductoCompleto } from '../../components/catalogo/ProductoDetalle';
+import { FiltrosCatalogo } from '../../components/catalogo/FiltrosCatalogo';
+import { useFiltrosCatalogo } from '../../lib/useFiltrosCatalogo';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
 type RespuestaCatalogo = { canal: string | null; catalogoId?: string; productos: ProductoCompleto[] };
 
-const TODAS = 'Todas';
-
-function opcionesDe(productos: ProductoCompleto[], campo: 'categoria' | 'subcategoria' | 'tipo') {
-  const set = new Set(productos.map((p) => p[campo] ?? 'Otros'));
-  return [TODAS, ...Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))];
-}
-
 export default function CatalogoPage() {
   const { agregar } = useCart();
   const [productos, setProductos] = useState<ProductoCompleto[]>([]);
-  const [busqueda, setBusqueda] = useState('');
-  const [categoria, setCategoria] = useState(TODAS);
-  const [subcategoria, setSubcategoria] = useState(TODAS);
-  const [tipo, setTipo] = useState(TODAS);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
   const [seleccionado, setSeleccionado] = useState<ProductoCompleto | null>(null);
@@ -62,46 +53,21 @@ export default function CatalogoPage() {
     })();
   }, []);
 
-  // Filtros en cascada: Subcategoría se acota a lo que existe dentro de la
-  // Categoría elegida, y Tipo se acota a lo que existe dentro de la
-  // Subcategoría (y Categoría) elegidas — así no se puede armar una
-  // combinación que dé 0 resultados.
-  const categorias = useMemo(() => opcionesDe(productos, 'categoria'), [productos]);
-
-  const productosPorCategoria = useMemo(
-    () => (categoria === TODAS ? productos : productos.filter((p) => (p.categoria ?? 'Otros') === categoria)),
-    [productos, categoria],
-  );
-  const subcategorias = useMemo(() => opcionesDe(productosPorCategoria, 'subcategoria'), [productosPorCategoria]);
-
-  const productosPorSubcategoria = useMemo(
-    () => (subcategoria === TODAS ? productosPorCategoria : productosPorCategoria.filter((p) => (p.subcategoria ?? 'Otros') === subcategoria)),
-    [productosPorCategoria, subcategoria],
-  );
-  const tipos = useMemo(() => opcionesDe(productosPorSubcategoria, 'tipo'), [productosPorSubcategoria]);
-
-  // Si al cambiar un filtro de arriba la seleccion de abajo deja de tener
-  // sentido (0 productos posibles), se resetea a "Todas" en vez de dejar
-  // una combinacion imposible elegida.
-  useEffect(() => {
-    if (subcategoria !== TODAS && !subcategorias.includes(subcategoria)) setSubcategoria(TODAS);
-  }, [subcategorias, subcategoria]);
-
-  useEffect(() => {
-    if (tipo !== TODAS && !tipos.includes(tipo)) setTipo(TODAS);
-  }, [tipos, tipo]);
-
-  const filtrados = useMemo(() => {
-    const termino = busqueda.trim().toLowerCase();
-    return productos.filter((p) => {
-      const coincideCategoria = categoria === TODAS || (p.categoria ?? 'Otros') === categoria;
-      const coincideSubcategoria = subcategoria === TODAS || (p.subcategoria ?? 'Otros') === subcategoria;
-      const coincideTipo = tipo === TODAS || (p.tipo ?? 'Otros') === tipo;
-      const coincideBusqueda =
-        !termino || (p.nombre ?? '').toLowerCase().includes(termino) || p.sku.toLowerCase().includes(termino);
-      return coincideCategoria && coincideSubcategoria && coincideTipo && coincideBusqueda;
-    });
-  }, [productos, busqueda, categoria, subcategoria, tipo]);
+  const {
+    busqueda,
+    setBusqueda,
+    categoria,
+    setCategoria,
+    categorias,
+    subcategoria,
+    setSubcategoria,
+    subcategorias,
+    tipo,
+    setTipo,
+    tipos,
+    filtrados,
+    hayFiltros,
+  } = useFiltrosCatalogo(productos);
 
   // Se agrupa por linea (Cavalo Forte, Bendito Loiro...) para los
   // encabezados de sección — agrupar por categoría no serviría, hoy es un
@@ -114,61 +80,25 @@ export default function CatalogoPage() {
 
   const esVistaAdmin = !getUsuario()?.canal;
 
-  const hayFiltros = busqueda.trim().length > 0 || categoria !== TODAS || subcategoria !== TODAS || tipo !== TODAS;
-
-  function estiloSelect(activo: boolean) {
-    return `w-full rounded-pill border px-3 py-2 text-sm ${activo ? 'border-acento text-acento' : 'border-musgo/30 text-bosque'}`;
-  }
-
   return (
     <div className="space-y-3">
       <header className="rounded-card bg-bosque p-4 text-white">
         <p className="text-sm opacity-90">Catálogo vigente</p>
       </header>
 
-      <div className="space-y-2 rounded-card bg-white p-2 shadow-sm">
-        <div className="relative">
-          <input
-            type="search"
-            placeholder="Buscar por nombre o código..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            className={`w-full rounded-pill border px-3 py-2 text-sm outline-none transition-colors ${
-              busqueda ? 'border-acento ring-1 ring-acento/30' : 'border-musgo/30'
-            }`}
-          />
-          {busqueda && (
-            <button
-              aria-label="Limpiar búsqueda"
-              onClick={() => setBusqueda('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-bosque/40 hover:text-acento"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <div>
-            <label className="block px-1 text-[11px] font-medium uppercase text-bosque/50">Categoría</label>
-            <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className={estiloSelect(categoria !== TODAS)}>
-              {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block px-1 text-[11px] font-medium uppercase text-bosque/50">Subcategoría</label>
-            <select value={subcategoria} onChange={(e) => setSubcategoria(e.target.value)} className={estiloSelect(subcategoria !== TODAS)}>
-              {subcategorias.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block px-1 text-[11px] font-medium uppercase text-bosque/50">Tipo</label>
-            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={estiloSelect(tipo !== TODAS)}>
-              {tipos.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-        </div>
-      </div>
+      <FiltrosCatalogo
+        busqueda={busqueda}
+        onBusqueda={setBusqueda}
+        categoria={categoria}
+        onCategoria={setCategoria}
+        categorias={categorias}
+        subcategoria={subcategoria}
+        onSubcategoria={setSubcategoria}
+        subcategorias={subcategorias}
+        tipo={tipo}
+        onTipo={setTipo}
+        tipos={tipos}
+      />
 
       <ErrorBanner mensaje={error} />
       {cargando && <p className="text-xs text-bosque/50">Cargando catálogo…</p>}
