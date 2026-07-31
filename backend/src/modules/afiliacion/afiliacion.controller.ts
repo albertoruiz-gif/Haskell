@@ -11,19 +11,27 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 export class AfiliacionController {
   constructor(private readonly afiliacionService: AfiliacionService) {}
 
+  // Un Lider ve solo a los suyos (Comercio Minorista) — Administrador y
+  // Gerente Comercial ven todo (supervisión general, ver auditoría UX).
   @Get()
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
-  listar(@Query('canal') canal?: Canal, @Query('activo') activo?: string) {
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'LIDER_MINORISTA')
+  listar(@Query('canal') canal: Canal | undefined, @Query('activo') activo: string | undefined, @Req() req: any) {
     return this.afiliacionService.listarAsesores({
       canal,
       activo: activo === undefined ? undefined : activo === 'true',
+      liderIdPropio: req.user.rol === 'LIDER_MINORISTA' ? req.user.liderId : undefined,
     });
   }
 
+  // Un Lider solo puede afiliar asesores de Comercio Minorista, y quedan
+  // vinculados a él automáticamente (ver crearAsesorIndividual).
   @Post('individual')
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
-  crearIndividual(@Body() dto: CrearAsesorDto) {
-    return this.afiliacionService.crearAsesorIndividual({ ...dto, fechaNacimiento: new Date(dto.fechaNacimiento) });
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'LIDER_MINORISTA')
+  crearIndividual(@Body() dto: CrearAsesorDto, @Req() req: any) {
+    return this.afiliacionService.crearAsesorIndividual(
+      { ...dto, fechaNacimiento: new Date(dto.fechaNacimiento) },
+      req.user.rol === 'LIDER_MINORISTA' ? req.user.liderId : undefined,
+    );
   }
 
   // RF-008: sube el Excel, devuelve preview de validos/errores SIN persistir

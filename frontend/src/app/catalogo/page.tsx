@@ -65,6 +65,8 @@ export default function CatalogoPage() {
     tipo,
     setTipo,
     tipos,
+    tipoProducto,
+    setTipoProducto,
     filtrados,
     hayFiltros,
   } = useFiltrosCatalogo(productos);
@@ -98,6 +100,8 @@ export default function CatalogoPage() {
         tipo={tipo}
         onTipo={setTipo}
         tipos={tipos}
+        tipoProducto={tipoProducto}
+        onTipoProducto={setTipoProducto}
       />
 
       <ErrorBanner mensaje={error} />
@@ -127,15 +131,18 @@ export default function CatalogoPage() {
       {Object.entries(porLinea).map(([lineaNombre, items]) => (
         <div key={lineaNombre} className="space-y-2">
           <h2 className="text-sm font-medium text-bosque">{lineaNombre}</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {items.map((p) => (
               <article key={p.sku} className="rounded-card bg-white p-3 shadow-sm">
                 <div className="mb-2 flex gap-1">
                   {esVistaAdmin && (
                     <span className="inline-block rounded-pill bg-musgo/20 px-2 py-1 text-xs font-medium text-musgo-dark">{p.canal}</span>
                   )}
-                  {p.componentes.length > 0 && (
+                  {p.esPack && (
                     <span className="inline-block rounded-pill bg-acento/15 px-2 py-1 text-xs font-medium text-acento">Pack</span>
+                  )}
+                  {p.oferta && (
+                    <span className="inline-block rounded-pill bg-promo px-2 py-1 text-xs font-medium text-white">Oferta</span>
                   )}
                 </div>
                 <button className="block w-full text-left" onClick={() => setSeleccionado(p)}>
@@ -150,6 +157,9 @@ export default function CatalogoPage() {
                   <p className="text-xs text-bosque/50">{p.sku}</p>
                   <p className="mt-1 text-sm text-bosque/50 line-through">S/{p.pvp.toFixed(2)}</p>
                   <p className="text-lg font-medium text-acento">S/ {p.precioAsesor.toFixed(2)}</p>
+                  <p className={`text-xs ${p.stockDisponible > 0 ? 'text-bosque/50' : 'font-medium text-red-600'}`}>
+                    {p.stockDisponible > 0 ? `${p.stockDisponible} unidades disponibles` : 'Sin stock'}
+                  </p>
                 </button>
                 <button
                   onClick={() => agregarConFeedback(p)}

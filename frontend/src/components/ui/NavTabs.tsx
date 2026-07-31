@@ -23,7 +23,7 @@ const TABS = [
 const TABS_POR_ROL: Record<string, string[]> = {
   ASESOR: ['/catalogo', '/carrito'],
   VENDEDOR: ['/catalogo', '/carrito'],
-  LIDER_MINORISTA: ['/catalogo', '/carrito'],
+  LIDER_MINORISTA: ['/gestion'],
   ADMINISTRADOR: ['/catalogo', '/gestion', '/almacen', '/delivery'],
   GERENTE_COMERCIAL: ['/catalogo', '/gestion'],
   GESTOR_CATALOGO: ['/catalogo', '/gestion'],
@@ -91,7 +91,7 @@ export function NavTabs() {
     <div className="space-y-2">
       {/* Escritorio: logo + tabs + usuario en una sola barra */}
       <div className="hidden items-center gap-4 rounded-pill bg-white py-2 pl-4 pr-2 shadow-sm lg:flex">
-        <Logo />
+        <Logo className="h-16" />
         <nav className="flex flex-1 gap-2">
           <Tabs />
         </nav>
@@ -110,7 +110,7 @@ export function NavTabs() {
       {/* Mobile/tablet: apilado, logo arriba */}
       <div className="space-y-2 lg:hidden">
         <div className="flex items-center justify-between rounded-pill bg-white px-3 py-1.5 shadow-sm">
-          <Logo />
+          <Logo className="h-12" />
           {usuario && pathname !== '/login' && (
             <div className="flex items-center gap-2 text-xs">
               <span className="hidden text-bosque/70 sm:inline">

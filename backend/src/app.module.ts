@@ -12,6 +12,9 @@ import { AuthModule } from './modules/auth/auth.module';
 import { AfiliacionModule } from './modules/afiliacion/afiliacion.module';
 import { OperacionesModule } from './modules/operaciones/operaciones.module';
 import { TransportistasModule } from './modules/transportistas/transportistas.module';
+import { LideresModule } from './modules/lideres/lideres.module';
+import { InventarioModule } from './modules/inventario/inventario.module';
+import { GerentesComercialesModule } from './modules/gerentes-comerciales/gerentes-comerciales.module';
 import { TarifasModule } from './modules/tarifas/tarifas.module';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module';
 import { CatalogosDigitalesModule } from './modules/catalogos-digitales/catalogos-digitales.module';
@@ -34,6 +37,9 @@ import { RolesGuard } from './common/guards/roles.guard';
     PaymentsModule,
     OperacionesModule,
     TransportistasModule,
+    LideresModule,
+    GerentesComercialesModule,
+    InventarioModule,
     TarifasModule,
     IntegracionesModule,
     CatalogosDigitalesModule,

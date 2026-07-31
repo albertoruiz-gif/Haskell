@@ -7,13 +7,24 @@ import { useEffect, useMemo, useState } from 'react';
 // Catálogo/Precios en Gestión (antes vivía duplicado en cada pantalla).
 export const TODAS = 'Todas';
 
+export type TipoProductoFiltro = 'todos' | 'individual' | 'pack';
+
 type ProductoFiltrable = {
   sku: string;
   nombre?: string | null;
   categoria?: string | null;
   subcategoria?: string | null;
   tipo?: string | null;
+  // Cualquiera de las dos formas sirve para detectar si es un pack — el
+  // catálogo del asesor ya trae "esPack" resuelto, Catálogo/Precios en
+  // Gestión trae la relación completa "packComponentes".
+  esPack?: boolean;
+  packComponentes?: unknown[];
 };
+
+function esPackDe(p: ProductoFiltrable): boolean {
+  return p.esPack ?? (p.packComponentes ? p.packComponentes.length > 0 : false);
+}
 
 function opcionesDe<T extends ProductoFiltrable>(productos: T[], campo: 'categoria' | 'subcategoria' | 'tipo') {
   const set = new Set(productos.map((p) => p[campo] ?? 'Otros'));
@@ -25,6 +36,7 @@ export function useFiltrosCatalogo<T extends ProductoFiltrable>(productos: T[]) 
   const [categoria, setCategoria] = useState(TODAS);
   const [subcategoria, setSubcategoria] = useState(TODAS);
   const [tipo, setTipo] = useState(TODAS);
+  const [tipoProducto, setTipoProducto] = useState<TipoProductoFiltro>('todos');
 
   const categorias = useMemo(() => opcionesDe(productos, 'categoria'), [productos]);
 
@@ -57,13 +69,15 @@ export function useFiltrosCatalogo<T extends ProductoFiltrable>(productos: T[]) 
       const coincideCategoria = categoria === TODAS || (p.categoria ?? 'Otros') === categoria;
       const coincideSubcategoria = subcategoria === TODAS || (p.subcategoria ?? 'Otros') === subcategoria;
       const coincideTipo = tipo === TODAS || (p.tipo ?? 'Otros') === tipo;
+      const coincideTipoProducto = tipoProducto === 'todos' || (tipoProducto === 'pack') === esPackDe(p);
       const coincideBusqueda =
         !termino || (p.nombre ?? '').toLowerCase().includes(termino) || p.sku.toLowerCase().includes(termino);
-      return coincideCategoria && coincideSubcategoria && coincideTipo && coincideBusqueda;
+      return coincideCategoria && coincideSubcategoria && coincideTipo && coincideTipoProducto && coincideBusqueda;
     });
-  }, [productos, busqueda, categoria, subcategoria, tipo]);
+  }, [productos, busqueda, categoria, subcategoria, tipo, tipoProducto]);
 
-  const hayFiltros = busqueda.trim().length > 0 || categoria !== TODAS || subcategoria !== TODAS || tipo !== TODAS;
+  const hayFiltros =
+    busqueda.trim().length > 0 || categoria !== TODAS || subcategoria !== TODAS || tipo !== TODAS || tipoProducto !== 'todos';
 
   return {
     busqueda,
@@ -77,6 +91,8 @@ export function useFiltrosCatalogo<T extends ProductoFiltrable>(productos: T[]) 
     tipo,
     setTipo,
     tipos,
+    tipoProducto,
+    setTipoProducto,
     filtrados,
     hayFiltros,
   };

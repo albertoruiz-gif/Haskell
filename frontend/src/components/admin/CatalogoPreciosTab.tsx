@@ -33,6 +33,8 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
     tipo,
     setTipo,
     tipos,
+    tipoProducto,
+    setTipoProducto,
     filtrados,
     hayFiltros,
   } = useFiltrosCatalogo(lineas);
@@ -139,6 +141,8 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
         tipo={tipo}
         onTipo={setTipo}
         tipos={tipos}
+        tipoProducto={tipoProducto}
+        onTipoProducto={setTipoProducto}
       />
 
       {lineas.length > 0 && (
@@ -190,6 +194,10 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
                 </button>
               </div>
             )}
+
+            <p className={`mt-1 text-xs ${l.stockDisponible > 0 ? 'text-bosque/50' : 'font-medium text-red-600'}`}>
+              {l.stockDisponible > 0 ? `Stock: ${l.stockDisponible} unidades` : 'Sin stock'}
+            </p>
 
             <button
               onClick={() => setEditando(l)}

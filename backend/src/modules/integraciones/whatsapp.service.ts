@@ -14,6 +14,7 @@ const ESTADOS_ES: Record<EstadoPedido, string> = {
   ENTREGADO: 'Entregado',
   ENTREGA_FALLIDA: 'Intento de entrega fallido',
   CANCELADO_DEVUELTO: 'Cancelado / devuelto',
+  ANULADO_POR_VENCIMIENTO: 'Anulado — venció el plazo de pago',
 };
 
 /** Peru: celulares son 9 digitos. Comparamos por los ultimos 9 digitos para

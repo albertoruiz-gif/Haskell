@@ -35,19 +35,25 @@ export interface ErrorFila {
 export class AfiliacionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // RF-006/RF-009: alta individual con validaciones obligatorias
-  async crearAsesorIndividual(data: {
-    email: string;
-    nombres: string;
-    apellidos: string;
-    tipoDocumento: string;
-    numeroDocumento: string;
-    fechaNacimiento: Date;
-    telefonoPrincipal: string;
-    numeroYape: string;
-    canal: Canal;
-    direccion: { departamento: string; provincia: string; distrito: string; direccion: string; referencia?: string; pais?: string };
-  }) {
+  // RF-006/RF-009: alta individual con validaciones obligatorias.
+  // liderQueAfilia: cuando un Lider (rol LIDER_MINORISTA) crea el asesor,
+  // se ignora el canal recibido — se fuerza a COMERCIO_MINORISTA y el
+  // asesor queda vinculado a ese líder (es lo único que puede afiliar).
+  async crearAsesorIndividual(
+    data: {
+      email: string;
+      nombres: string;
+      apellidos: string;
+      tipoDocumento: string;
+      numeroDocumento: string;
+      fechaNacimiento: Date;
+      telefonoPrincipal: string;
+      numeroYape: string;
+      canal: Canal;
+      direccion: { departamento: string; provincia: string; distrito: string; direccion: string; referencia?: string; pais?: string };
+    },
+    liderQueAfilia?: string,
+  ) {
     const documentoExistente = await this.prisma.asesor.findUnique({ where: { numeroDocumento: data.numeroDocumento } });
     if (documentoExistente) {
       throw new BadRequestException(`Ya existe un asesor con documento ${data.numeroDocumento}.`);
@@ -78,7 +84,8 @@ export class AfiliacionService {
         fechaNacimiento: data.fechaNacimiento,
         telefonoPrincipal: data.telefonoPrincipal,
         numeroYape: data.numeroYape,
-        canal: data.canal,
+        canal: liderQueAfilia ? 'COMERCIO_MINORISTA' : data.canal,
+        liderId: liderQueAfilia,
         direcciones: { create: { ...data.direccion, predeterminada: true } },
       },
       include: { direcciones: true },
@@ -88,11 +95,14 @@ export class AfiliacionService {
     return asesor;
   }
 
-  // Listado para el panel de administrador (alta/baja de asesores)
-  async listarAsesores(filtros?: { canal?: Canal; activo?: boolean }) {
+  // Listado para el panel de administrador (alta/baja de asesores). Un
+  // Lider solo ve a los suyos (liderIdPropio fuerza el filtro, ignorando
+  // cualquier otro valor recibido).
+  async listarAsesores(filtros?: { canal?: Canal; activo?: boolean; liderIdPropio?: string }) {
     return this.prisma.asesor.findMany({
       where: {
-        canal: filtros?.canal,
+        canal: filtros?.liderIdPropio ? 'COMERCIO_MINORISTA' : filtros?.canal,
+        liderId: filtros?.liderIdPropio,
         user: filtros?.activo !== undefined ? { activo: filtros.activo } : undefined,
       },
       include: {

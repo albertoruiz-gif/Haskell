@@ -1,5 +1,7 @@
 'use client';
 
+import { TipoProductoFiltro } from '../../lib/useFiltrosCatalogo';
+
 // UI de filtros compartida entre el Catálogo del asesor y Catálogo/Precios
 // en Gestión — la lógica de cascada vive en useFiltrosCatalogo.
 
@@ -15,7 +17,18 @@ type Props = {
   tipo: string;
   onTipo: (v: string) => void;
   tipos: string[];
+  // Opcional: al pasar estos dos, aparece el segmentado Todos/Individuales/
+  // Packs. Se omite en pantallas donde no aplica (ej. el armador de packs,
+  // que ya excluye los packs de la lista de candidatos).
+  tipoProducto?: TipoProductoFiltro;
+  onTipoProducto?: (v: TipoProductoFiltro) => void;
 };
+
+const OPCIONES_TIPO_PRODUCTO: { valor: TipoProductoFiltro; label: string }[] = [
+  { valor: 'todos', label: 'Todos' },
+  { valor: 'individual', label: 'Individuales' },
+  { valor: 'pack', label: 'Packs' },
+];
 
 const TODAS = 'Todas';
 
@@ -35,6 +48,8 @@ export function FiltrosCatalogo({
   tipo,
   onTipo,
   tipos,
+  tipoProducto,
+  onTipoProducto,
 }: Props) {
   return (
     <div className="space-y-2 rounded-card bg-white p-2 shadow-sm">
@@ -85,6 +100,24 @@ export function FiltrosCatalogo({
           </select>
         </div>
       </div>
+
+      {tipoProducto && onTipoProducto && (
+        <div className="flex gap-1">
+          {OPCIONES_TIPO_PRODUCTO.map((o) => (
+            <button
+              key={o.valor}
+              onClick={() => onTipoProducto(o.valor)}
+              className={
+                tipoProducto === o.valor
+                  ? 'rounded-pill bg-bosque px-3 py-1 text-xs font-medium text-white'
+                  : 'rounded-pill bg-crema px-3 py-1 text-xs text-bosque'
+              }
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

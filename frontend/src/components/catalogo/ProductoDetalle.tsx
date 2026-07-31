@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { apiFetch, resolveAssetUrl } from '../../lib/api';
+import { useState } from 'react';
+import { resolveAssetUrl } from '../../lib/api';
 
 export type ProductoCompleto = {
   id: string;
@@ -18,13 +18,14 @@ export type ProductoCompleto = {
   modoUso: string | null;
   pvp: number;
   precioAsesor: number;
+  oferta: { descuentoPct: number | null; precioFijo: number | null; alcance: string; fin: string } | null;
+  stockDisponible: number;
   imagenUrl: string | null;
   imagenesAdicionales: string[];
   componentes: { id: string; sku: string; nombre: string | null; imagenUrl: string | null; descuentoPct: number }[];
+  esPack: boolean;
   canal: string;
 };
-
-type Oferta = { alcance: string; descuentoPct: string | null; precioFijo: string | null; fin: string };
 
 function Lista({ titulo, texto }: { titulo: string; texto: string | null }) {
   if (!texto) return null;
@@ -53,23 +54,9 @@ export function ProductoDetalle({
   onClose: () => void;
   onAgregar: () => void;
 }) {
-  const [oferta, setOferta] = useState<Oferta | null>(null);
+  const oferta = producto.oferta;
   const imagenes = [producto.imagenUrl, ...producto.imagenesAdicionales].filter(Boolean) as string[];
   const [imagenActiva, setImagenActiva] = useState(0);
-
-  useEffect(() => {
-    apiFetch<Oferta | null>(`/campaigns/ofertas/vigente?catalogLineId=${producto.id}`)
-      .then(setOferta)
-      .catch(() => setOferta(null));
-  }, [producto.id]);
-
-  const precioConOferta = oferta
-    ? oferta.precioFijo
-      ? Number(oferta.precioFijo)
-      : oferta.descuentoPct
-        ? producto.precioAsesor * (1 - Number(oferta.descuentoPct) / 100)
-        : null
-    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
@@ -124,8 +111,9 @@ export function ProductoDetalle({
               </span>
             )}
             <p className="text-sm text-bosque/50 line-through">S/ {producto.pvp.toFixed(2)}</p>
-            <p className="text-2xl font-medium text-acento">
-              S/ {(precioConOferta ?? producto.precioAsesor).toFixed(2)}
+            <p className="text-2xl font-medium text-acento">S/ {producto.precioAsesor.toFixed(2)}</p>
+            <p className={`mt-1 text-xs ${producto.stockDisponible > 0 ? 'text-bosque/50' : 'font-medium text-red-600'}`}>
+              {producto.stockDisponible > 0 ? `${producto.stockDisponible} unidades disponibles` : 'Sin stock disponible'}
             </p>
           </div>
 

@@ -4,6 +4,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { OdooClient } from '../odoo/odoo.client';
+import { InventarioService } from '../inventario/inventario.service';
 
 @Injectable()
 export class OrdersService {
@@ -12,7 +13,18 @@ export class OrdersService {
     private readonly pricing: PricingService,
     private readonly campaigns: CampaignsService,
     private readonly odoo: OdooClient,
+    private readonly inventario: InventarioService,
   ) {}
+
+  /** Reserva stock real (FEFO) para el pedido recién creado — si falta stock, el pedido queda cancelado y se rechaza. */
+  private async reservarOCancelar(orderId: string) {
+    try {
+      await this.inventario.reservarParaOrder(orderId);
+    } catch (e) {
+      await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.CANCELADO_DEVUELTO } });
+      throw e;
+    }
+  }
 
   /**
    * RF-017: revalida todo antes de abrir Culqi. RN-038: el pedido congela
@@ -80,7 +92,7 @@ export class OrdersService {
       Number(tarifa.precio),
     );
 
-    return this.prisma.order.create({
+    const order = await this.prisma.order.create({
       data: {
         asesorId: cart.asesorId,
         canal: catalog.canal,
@@ -97,6 +109,8 @@ export class OrdersService {
       },
       include: { items: true },
     });
+    await this.reservarOCancelar(order.id);
+    return order;
   }
 
   /**
@@ -165,7 +179,7 @@ export class OrdersService {
       Number(tarifa.precio),
     );
 
-    return this.prisma.order.create({
+    const order = await this.prisma.order.create({
       data: {
         asesorId: asesor.id,
         canal: catalog.canal,
@@ -182,6 +196,8 @@ export class OrdersService {
       },
       include: { items: true },
     });
+    await this.reservarOCancelar(order.id);
+    return order;
   }
 
   /** Para el panel de Gestión → Pagos y Almacén → Despacho: pedidos por estado (todos si no se pide uno). */
@@ -206,14 +222,18 @@ export class OrdersService {
     });
     // TODO RF-036: una vez con credenciales reales de Odoo, encadenar
     // confirmarPagoYEnviarAOdoo aca en vez de solo marcar PAGADO.
-    return this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PAGADO, pagadoEn: new Date() } });
+    const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PAGADO, pagadoEn: new Date() } });
+    await this.inventario.comprometerParaOrder(orderId);
+    return actualizado;
   }
 
   async rechazarPedido(orderId: string, actorId: string, motivo?: string) {
     await this.prisma.auditLog.create({
       data: { actorId, accion: 'RECHAZAR_PEDIDO', entidad: 'Order', entidadId: orderId, motivo },
     });
-    return this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.CANCELADO_DEVUELTO } });
+    const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.CANCELADO_DEVUELTO } });
+    await this.inventario.liberarParaOrder(orderId);
+    return actualizado;
   }
 
   /** RF-022/RF-036: tras el pago aprobado, confirma el pedido y lo crea en Odoo. Idempotente por referenciaWeb. */
@@ -238,9 +258,11 @@ export class OrdersService {
       lineas: order.items.map((i) => ({ odooProductId: 0, cantidad: i.cantidad, precioUnitario: Number(i.precioAsesorUnitario) })),
     });
 
-    return this.prisma.order.update({
+    const actualizado = await this.prisma.order.update({
       where: { id: orderId },
       data: { estado: EstadoPedido.PAGADO, odooSaleOrderId },
     });
+    await this.inventario.comprometerParaOrder(orderId);
+    return actualizado;
   }
 }

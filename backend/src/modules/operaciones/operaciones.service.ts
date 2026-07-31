@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { EstadoEntrega, EstadoPedido } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { OdooClient } from '../odoo/odoo.client';
+import { InventarioService } from '../inventario/inventario.service';
 
 /**
  * Picking/packing/despacho/entrega — pantalla "Almacén" del mockup.
@@ -14,6 +15,7 @@ export class OperacionesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly odoo: OdooClient,
+    private readonly inventario: InventarioService,
   ) {}
 
   // RF-024: picking list — pedido + lineas + ubicacion (la ubicacion vive en Odoo stock.move)
@@ -112,6 +114,8 @@ export class OperacionesService {
     if (!data.evidenciaUrl) throw new BadRequestException('La entrega requiere una foto de evidencia.');
     const entregaActual = await this.prisma.entrega.findUniqueOrThrow({ where: { orderId }, include: { transportista: true } });
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO } });
+    // Recién acá sale físicamente del lote — hasta este momento solo estaba comprometido.
+    await this.inventario.consumirParaOrder(orderId);
     return this.prisma.entrega.update({
       where: { orderId },
       data: { estado: EstadoEntrega.ENTREGADO, montoPago: entregaActual.transportista.tarifaPorEntrega, ...data },
@@ -139,6 +143,9 @@ export class OperacionesService {
   async registrarEntregaFallida(orderId: string, motivo: string, observaciones?: string) {
     if (!motivo) throw new BadRequestException('La entrega fallida requiere motivo (RF-029).');
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGA_FALLIDA } });
+    // Simplificación: la mercadería vuelve directo a disponible (sin un
+    // sub-flujo de inspección de devolución física aparte, ver EP-21/documento).
+    await this.inventario.liberarParaOrder(orderId);
     return this.prisma.entrega.update({
       where: { orderId },
       data: { estado: EstadoEntrega.FALLIDO, motivoFallo: motivo, observaciones },

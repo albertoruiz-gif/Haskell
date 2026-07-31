@@ -78,6 +78,31 @@ enum EstadoPedido {
   ENTREGADO
   ENTREGA_FALLIDA
   CANCELADO_DEVUELTO
+  // La reserva de stock (30 min) venció sin que se suba/valide el pago —
+  // se libera el stock reservado automáticamente (verificación perezosa,
+  // ver InventarioService.liberarReservasVencidas).
+  ANULADO_POR_VENCIMIENTO
+}
+
+enum EstadoLote {
+  NACIONALIZADO
+  EN_TRASLADO_ALMACEN
+  RECEPCION_PENDIENTE
+  CONTROL_CALIDAD
+  DISPONIBLE
+  BLOQUEADO
+  DANADO
+  PROXIMO_VENCER
+  VENCIDO
+  EN_BAJA
+  DADO_DE_BAJA
+}
+
+enum EstadoReserva {
+  RESERVADO_TEMPORAL
+  COMPROMETIDO
+  CONSUMIDO
+  LIBERADO
 }
 
 model User {
@@ -92,6 +117,8 @@ model User {
 
   asesor       Asesor?
   transportista Transportista?
+  lider        Lider?
+  gerenteComercial GerenteComercial?
   auditLogs    AuditLog[] @relation("ActorAuditLog")
 
   @@map("users")
@@ -110,7 +137,10 @@ model Asesor {
   telefonoSecundario String?
   numeroYape       String
   canal            Canal
+  // Solo se completa para asesores de canal COMERCIO_MINORISTA — son los
+  // que un Lider afilia y por los que gana comisión (RN líder/comisiones).
   liderId          String?
+  lider            Lider?       @relation(fields: [liderId], references: [id])
   odooPartnerId    Int?         // res.partner en Odoo
 
   direcciones      Direccion[]
@@ -152,6 +182,38 @@ model Transportista {
   createdAt         DateTime @default(now())
 
   @@map("transportistas")
+}
+
+// Líder/Supervisor de equipo — afilia y tiene a cargo asesores de canal
+// COMERCIO_MINORISTA, y gana una comisión sobre sus ventas (rol
+// LIDER_MINORISTA). comisionPct es propio de cada líder, no global.
+model Lider {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  telefono     String
+  comisionPct  Decimal  @default(5) @db.Decimal(5, 2)
+
+  asesores     Asesor[]
+
+  createdAt    DateTime @default(now())
+
+  @@map("lideres")
+}
+
+// Gerente Comercial — a cargo de los asesores de Salones de Belleza y
+// Retail (fija su % de comisión vía PricingConfig), y además gana una
+// comisión propia sobre el total de ventas de los 3 canales.
+model GerenteComercial {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  telefono     String
+  comisionPct  Decimal  @default(4) @db.Decimal(5, 2)
+
+  createdAt    DateTime @default(now())
+
+  @@map("gerentes_comerciales")
 }
 
 model Tarifa {
@@ -230,9 +292,14 @@ model CatalogLine {
   ordenVisualizacion        Int      @default(0)
   destacado                 Boolean  @default(false)
   cantidadMaximaPorAsesor   Int?
+  // Derivado de los lotes (físico en estado DISPONIBLE/PROXIMO_VENCER menos
+  // reservas activas) — ya NO es editable a mano, se recalcula cada vez que
+  // cambia un lote o una reserva (ver InventarioService.recalcularStock).
+  stockDisponible           Int      @default(0)
 
   ofertas                  Offer[]
   cartItems                 CartItem[]
+  lotes                    LoteInventario[]
   // Si tiene filas acá, este producto ES un pack — su pvpCampania se
   // calcula sumando cada componente ya con el descuento propio del pack
   // (independiente de la oferta normal que el componente pueda tener por
@@ -256,6 +323,64 @@ model PackComponente {
 
   @@unique([packId, componenteId])
   @@map("pack_componentes")
+}
+
+// Lote de inventario — se controla desde su nacionalización/ingreso al
+// almacén (Haskell Perú no modela la etapa de compra/embarque/aduanas
+// previa, eso queda fuera de este sistema) hasta su venta, devolución o
+// baja. FEFO real: al reservar se toma primero el lote con fechaVencimiento
+// más próxima entre los que están DISPONIBLE/PROXIMO_VENCER.
+model LoteInventario {
+  id                       String     @id @default(cuid())
+  catalogLineId            String
+  catalogLine              CatalogLine @relation(fields: [catalogLineId], references: [id])
+  numeroLote               String
+  proveedor                String?
+  paisOrigen               String?
+  ordenCompra               String?
+  documentoImportacion      String?
+  fechaFabricacion          DateTime?
+  fechaVencimiento          DateTime?
+  cantidadImportada         Int?
+  cantidadRecibida          Int        @default(0)
+  cantidadDanada            Int        @default(0)
+  costoFob                  Decimal?   @db.Decimal(10, 2)
+  costoFleteSeguro          Decimal?   @db.Decimal(10, 2)
+  gastosAduaneros           Decimal?   @db.Decimal(10, 2)
+  costoTotalNacionalizado   Decimal?   @db.Decimal(10, 2)
+  costoUnitarioReal         Decimal?   @db.Decimal(10, 2)
+  ubicacionAlmacen          String?
+  estado                    EstadoLote @default(NACIONALIZADO)
+  responsableRecepcionId    String?
+  fechaLiberacion           DateTime?
+  motivoBloqueo             String?
+
+  reservas                  ReservaStock[]
+
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  @@map("lotes_inventario")
+}
+
+// Reserva de stock contra un lote específico (FEFO) por cada línea de
+// pedido — RESERVADO_TEMPORAL nace con expiraEn (30 min) al crear el
+// pedido; pasa a COMPROMETIDO al pagar; a CONSUMIDO al entregar; o a
+// LIBERADO si se cancela, falla la entrega, o vence sin pagarse.
+model ReservaStock {
+  id            String        @id @default(cuid())
+  loteId        String
+  lote          LoteInventario @relation(fields: [loteId], references: [id])
+  orderItemId   String
+  orderItem     OrderItem     @relation(fields: [orderItemId], references: [id])
+  cantidad      Int
+  estado        EstadoReserva @default(RESERVADO_TEMPORAL)
+  expiraEn      DateTime?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("reservas_stock")
 }
 
 // Ofertas temporales (dia/semana/mes) — adenda v0.3, extiende RF-043/RF-044
@@ -386,6 +511,7 @@ model OrderItem {
   precioAsesorUnitario      Decimal  @db.Decimal(10, 2)
   cantidad                  Int
   promocionAplicada          Json?
+  reservas                  ReservaStock[]
 
   @@map("order_items")
 }

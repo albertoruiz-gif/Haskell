@@ -25,6 +25,7 @@ export type LineaAdmin = {
   activos: string | null;
   modoUso: string | null;
   pvpCampania: string;
+  stockDisponible: number;
   imagenUrl: string | null;
   imagenesAdicionales: string[];
   packComponentes: PackComponenteAdmin[];
@@ -206,10 +207,25 @@ export function EditarProductoModal({
             <Campo label="Subcategoría" value={form.subcategoria} onChange={(v) => setCampo('subcategoria', v)} />
             <Campo label="Tipo" value={form.tipo} onChange={(v) => setCampo('tipo', v)} />
           </div>
-          <Campo label="Precio (PVP campaña)" value={form.pvpCampania} onChange={(v) => setCampo('pvpCampania', v)} disabled={esPack} />
+          <div className="grid grid-cols-2 gap-2">
+            <Campo label="Precio (PVP campaña)" value={form.pvpCampania} onChange={(v) => setCampo('pvpCampania', v)} disabled={esPack} />
+            {!esNuevo && (
+              <div>
+                <label className="block text-xs font-medium uppercase text-bosque/60">Stock disponible</label>
+                <p className="mt-1 rounded-pill border border-musgo/30 bg-crema px-3 py-2 text-sm text-bosque">
+                  {linea.stockDisponible} unidades
+                </p>
+              </div>
+            )}
+          </div>
           {esPack && (
             <p className="-mt-2 text-[11px] text-bosque/40">
               Este producto es un pack — su precio se calcula solo sumando sus componentes. Editalo desde Gestión → Ofertas y Packs.
+            </p>
+          )}
+          {!esNuevo && (
+            <p className="-mt-2 text-[11px] text-bosque/40">
+              El stock se calcula solo desde los lotes — gestionalo desde Almacén → Inventario.
             </p>
           )}
           <Campo label="Descripción" value={form.descripcion} onChange={(v) => setCampo('descripcion', v)} textarea />

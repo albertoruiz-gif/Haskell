@@ -22,7 +22,7 @@ export class AuthService {
   async login(email: string, password: string, ip?: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { asesor: true, transportista: true },
+      include: { asesor: true, transportista: true, lider: true, gerenteComercial: true },
     });
 
     if (!user || !user.activo) {
@@ -51,6 +51,8 @@ export class AuthService {
       canal: user.asesor?.canal ?? null,
       asesorId: user.asesor?.id ?? null,
       transportistaId: user.transportista?.id ?? null,
+      liderId: user.lider?.id ?? null,
+      gerenteComercialId: user.gerenteComercial?.id ?? null,
     };
 
     await this.prisma.auditLog.create({

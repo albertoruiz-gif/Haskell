@@ -20,6 +20,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     canal: string | null;
     asesorId: string | null;
     transportistaId?: string | null;
+    liderId?: string | null;
+    gerenteComercialId?: string | null;
   }) {
     return {
       id: payload.sub,
@@ -28,6 +30,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       canal: payload.canal,
       asesorId: payload.asesorId,
       transportistaId: payload.transportistaId ?? null,
+      liderId: payload.liderId ?? null,
+      gerenteComercialId: payload.gerenteComercialId ?? null,
     };
   }
 }

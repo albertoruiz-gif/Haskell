@@ -28,7 +28,24 @@ export class CatalogController {
   // todos los canales, para verificar lo que dan de alta en Gestion.
   private readonly ROLES_PREVIEW_CATALOGO = ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'];
 
-  private async mapearLinea(linea: any, catalogo: any) {
+  // Ofertas vigentes del catálogo, indexadas por catalogLineId — se piden
+  // una sola vez por catálogo (no una por línea) y se usan para que el
+  // precio que ve el asesor en el catálogo sea el mismo que se cobra al
+  // pagar (antes el catálogo ignoraba las ofertas activas por completo).
+  private async ofertasVigentesPorLinea(catalogId: string): Promise<Map<string, any>> {
+    const ahora = new Date();
+    const ofertas = await this.prisma.offer.findMany({
+      where: { catalogId, activa: true, inicio: { lte: ahora }, fin: { gte: ahora }, catalogLineId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const mapa = new Map<string, any>();
+    for (const oferta of ofertas) {
+      if (!mapa.has(oferta.catalogLineId as string)) mapa.set(oferta.catalogLineId as string, oferta);
+    }
+    return mapa;
+  }
+
+  private async mapearLinea(linea: any, catalogo: any, ofertasPorLinea: Map<string, any>) {
     const porcentaje = await this.pricing.resolverPorcentajeAsesor({
       campaignId: catalogo.campaignId,
       catalogId: catalogo.id,
@@ -45,6 +62,17 @@ export class CatalogController {
       imagenUrl: pc.componente.imagenUrl,
       descuentoPct: Number(pc.descuentoPct),
     }));
+
+    const oferta = ofertasPorLinea.get(linea.id);
+    // Mismo cálculo que orders.service.crearPedidoDesdeItems: la oferta
+    // reduce el PVP antes de aplicar el % del asesor, para que el precio
+    // mostrado acá sea el que realmente se cobra al confirmar el pedido.
+    const pvpEfectivo = oferta?.precioFijo
+      ? Number(oferta.precioFijo)
+      : oferta?.descuentoPct
+        ? Number(linea.pvpCampania) * (1 - Number(oferta.descuentoPct) / 100)
+        : Number(linea.pvpCampania);
+
     return {
       id: linea.id,
       sku: linea.sku,
@@ -59,11 +87,21 @@ export class CatalogController {
       modoUso: linea.modoUso,
       activos: linea.activos,
       pvp: Number(linea.pvpCampania),
-      precioAsesor: this.pricing.calcularPrecioAsesor(Number(linea.pvpCampania), porcentaje),
+      precioAsesor: this.pricing.calcularPrecioAsesor(pvpEfectivo, porcentaje),
+      oferta: oferta
+        ? {
+            descuentoPct: oferta.descuentoPct ? Number(oferta.descuentoPct) : null,
+            precioFijo: oferta.precioFijo ? Number(oferta.precioFijo) : null,
+            alcance: oferta.alcance,
+            fin: oferta.fin,
+          }
+        : null,
+      stockDisponible: linea.stockDisponible,
       destacado: linea.destacado,
       imagenUrl: linea.imagenUrl,
       imagenesAdicionales: linea.imagenesAdicionales,
       componentes,
+      esPack: componentes.length > 0,
       canal: catalogo.canal,
     };
   }
@@ -103,7 +141,12 @@ export class CatalogController {
       });
 
       const productos = (
-        await Promise.all(catalogosPublicados.map((cat) => Promise.all(cat.lineas.map((linea) => this.mapearLinea(linea, cat)))))
+        await Promise.all(
+          catalogosPublicados.map(async (cat) => {
+            const ofertas = await this.ofertasVigentesPorLinea(cat.id);
+            return Promise.all(cat.lineas.map((linea) => this.mapearLinea(linea, cat, ofertas)));
+          }),
+        )
       ).flat();
 
       return { canal: null, campania: null, productos };
@@ -122,7 +165,8 @@ export class CatalogController {
 
     if (!catalogo) return { canal: canalDelUsuario, campania: null, productos: [] };
 
-    const productos = await Promise.all(catalogo.lineas.map((linea) => this.mapearLinea(linea, catalogo)));
+    const ofertas = await this.ofertasVigentesPorLinea(catalogo.id);
+    const productos = await Promise.all(catalogo.lineas.map((linea) => this.mapearLinea(linea, catalogo, ofertas)));
 
     return { canal: canalDelUsuario, catalogoId: catalogo.id, version: catalogo.version, productos };
   }
@@ -131,8 +175,10 @@ export class CatalogController {
   // GET /catalogo no sirve para admins: filtra por el canal del JWT, y un
   // ADMINISTRADOR/GERENTE_COMERCIAL no tiene canal (no es asesor).
 
+  // Incluye ALMACEN — necesita poder buscar el producto para el que va a
+  // dar de alta un lote en Inventario.
   @Get('admin/lineas')
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO', 'ALMACEN')
   listarLineas(@Query('catalogId') catalogId?: string) {
     return this.prisma.catalogLine.findMany({
       where: catalogId ? { catalogId } : undefined,

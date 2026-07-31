@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
+import { InventarioSection } from '../../components/almacen/InventarioSection';
 
 type Pedido = {
   id: string;
@@ -31,6 +32,7 @@ const PASOS = [
 ];
 
 export default function AlmacenPage() {
+  const [vista, setVista] = useState<'pedidos' | 'inventario'>('pedidos');
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [seleccionado, setSeleccionado] = useState<Pedido | null>(null);
   const [picking, setPicking] = useState<PickingInfo | null>(null);
@@ -114,10 +116,27 @@ export default function AlmacenPage() {
     }
   }
 
+  if (vista === 'inventario') {
+    return (
+      <div className="space-y-3">
+        <h1 className="text-lg font-medium text-bosque">Almacén</h1>
+        <div className="flex gap-2">
+          <button onClick={() => setVista('pedidos')} className="rounded-pill bg-white px-4 py-1.5 text-xs text-bosque shadow-sm">Pedidos</button>
+          <button className="rounded-pill bg-bosque px-4 py-1.5 text-xs font-medium text-white">Inventario</button>
+        </div>
+        <InventarioSection />
+      </div>
+    );
+  }
+
   if (!seleccionado) {
     return (
       <div className="space-y-3">
         <h1 className="text-lg font-medium text-bosque">Almacén</h1>
+        <div className="flex gap-2">
+          <button className="rounded-pill bg-bosque px-4 py-1.5 text-xs font-medium text-white">Pedidos</button>
+          <button onClick={() => setVista('inventario')} className="rounded-pill bg-white px-4 py-1.5 text-xs text-bosque shadow-sm">Inventario</button>
+        </div>
         <ErrorBanner mensaje={error} />
         {cargando && <p className="text-xs text-bosque/50">Cargando pedidos…</p>}
         {!cargando && pedidos.length === 0 && <p className="text-xs text-bosque/50">No hay pedidos pagados esperando picking/packing.</p>}
