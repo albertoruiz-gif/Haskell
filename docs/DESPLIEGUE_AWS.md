@@ -2,6 +2,17 @@
 
 Todo con AWS CLI + `eksctl` + `kubectl`, sin herramientas de Infraestructura como Código adicionales. Ejecutá esto una vez que la cuenta de AWS esté contratada.
 
+> **Nota (2026-08-01):** dado el tamaño actual del equipo (dos personas), se decidió posponer EKS/Kubernetes — este documento queda como referencia para cuando la escala lo justifique. El plan vigente para Test y Producción es más simple: dos instancias EC2 corriendo el mismo `docker compose` que ya se usa en local, sin cluster, sin RDS (Postgres en Docker en cada servidor), acceso por AWS Systems Manager (sin SSH expuesto), región `us-east-1`. Se documentará aparte cuando esté armado.
+
+## Odoo por ambiente — checklist obligatorio antes de cargar credenciales reales
+
+**Producción** es el único ambiente que debe apuntar al Odoo real (`Haskell_Distribuidor`, con su `ODOO_COMPANY_ID`). **Desarrollo y Testeo tienen que apuntar a una base de Odoo duplicada** (Odoo Online → Ajustes → Base de datos → Duplicar), nunca a la real — de lo contrario, un pedido de prueba baja stock real y ensucia la contabilidad real. Se recomienda una sola copia duplicada compartida entre Desarrollo y Testeo (equipo chico, bajo riesgo de choque), no una por ambiente.
+
+Antes de dar por buena una copia duplicada:
+- Confirmar el `ODOO_URL`/`ODOO_DB` que asignó Odoo a la copia (suele cambiar respecto al original).
+- Verificar si el API key técnico se copió junto con la base o si hay que regenerarlo dentro de la copia.
+- Cada ambiente tiene su propio `.env` con su propio set de `ODOO_URL`/`ODOO_DB`/`ODOO_API_KEY`/`ODOO_COMPANY_ID` — nunca se reutilizan las credenciales de Producción en Testeo o Desarrollo, ni al revés.
+
 ## 0. Prerrequisitos
 
 ```bash

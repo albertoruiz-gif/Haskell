@@ -3,8 +3,10 @@
 // Seguimiento del transportista, en formato tabla (una fila por pedido,
 // todos los estados visibles a la vez): asignar (sobre pedidos ya
 // empacados en Almacén), aceptar, en tránsito, entregado/devuelto — con
-// el plazo de entrega (RF-030, slaHorasSnapshot del pedido, 36h por
-// defecto) y una clasificación de salud (Atrasado / A tiempo / Postergado).
+// la fecha de entrega prometida (RF-030, calculada en el backend — ver
+// common/sla.util.ts) y una clasificación de salud (Atrasado / A tiempo /
+// Postergado). slaHorasSnapshot (36h por defecto) es solo la referencia
+// comercial que ve el cliente, no la fórmula real del plazo.
 
 import { Fragment, useEffect, useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../../lib/api';
@@ -28,6 +30,7 @@ type Pedido = {
   asesor: { user: { nombre: string } };
   pagadoEn: string | null;
   slaHorasSnapshot: number | null;
+  fechaEntregaPrometida: string | null;
   entrega: Entrega | null;
 };
 
@@ -43,8 +46,7 @@ const MOTIVOS_DEVOLUCION = [
 ];
 
 function limiteSLA(p: Pedido): Date | null {
-  if (!p.pagadoEn || !p.slaHorasSnapshot) return null;
-  return new Date(new Date(p.pagadoEn).getTime() + p.slaHorasSnapshot * 60 * 60 * 1000);
+  return p.fechaEntregaPrometida ? new Date(p.fechaEntregaPrometida) : null;
 }
 
 function horasTranscurridas(p: Pedido): number | null {
@@ -215,7 +217,7 @@ export function DespachoSection() {
                 <th className="px-3 py-2 font-medium">Pedido</th>
                 <th className="px-3 py-2 font-medium">Transportista</th>
                 <th className="px-3 py-2 font-medium">En tránsito</th>
-                <th className="px-3 py-2 font-medium">Tiempo transcurrido</th>
+                <th className="px-3 py-2 font-medium">Entrega prometida</th>
                 <th className="px-3 py-2 font-medium">Entregado</th>
                 <th className="px-3 py-2 font-medium">Devuelto (causa)</th>
                 <th className="px-3 py-2 font-medium">Estado</th>
@@ -264,7 +266,18 @@ export function DespachoSection() {
                         {p.entrega?.estado === 'EN_RUTA' || p.entrega?.estado === 'ENTREGADO' ? '✓' : '—'}
                       </td>
                       <td className="px-3 py-2">
-                        {horas !== null ? `${horas.toFixed(1)}h${p.slaHorasSnapshot ? ` / ${p.slaHorasSnapshot}h` : ''}` : '—'}
+                        {p.fechaEntregaPrometida ? (
+                          <div>
+                            <p>{new Date(p.fechaEntregaPrometida).toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit' })}</p>
+                            {horas !== null && (
+                              <p className="text-xs text-bosque/50">
+                                {horas.toFixed(1)}h transcurridas{p.slaHorasSnapshot ? ` · ref. ${p.slaHorasSnapshot}h` : ''}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {p.entrega?.estado === 'ENTREGADO' ? (

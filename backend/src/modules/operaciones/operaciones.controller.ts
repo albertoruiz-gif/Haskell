@@ -24,8 +24,8 @@ export class OperacionesController {
 
   @Post('pedidos/:id/packing/confirmar')
   @Roles('ALMACEN', 'ADMINISTRADOR')
-  confirmarPacking(@Param('id') id: string, @Body('bultos') bultos: number) {
-    return this.operacionesService.confirmarPacking(id, bultos);
+  confirmarPacking(@Param('id') id: string) {
+    return this.operacionesService.confirmarPacking(id);
   }
 
   @Post('pedidos/:id/transportista/asignar')

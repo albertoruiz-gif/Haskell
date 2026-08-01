@@ -51,7 +51,7 @@ export class CulqiService {
     });
 
     if (payment.estado === 'aprobado') {
-      await this.ordersService.confirmarPagoYEnviarAOdoo(orderId, data.id);
+      await this.ordersService.confirmarPagoYEnviarAOdoo(orderId);
     }
 
     return payment;

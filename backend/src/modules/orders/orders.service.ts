@@ -5,6 +5,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { OdooClient } from '../odoo/odoo.client';
 import { InventarioService } from '../inventario/inventario.service';
+import { calcularFechaEntregaPrometida } from '../../common/sla.util';
 
 @Injectable()
 export class OrdersService {
@@ -202,11 +203,17 @@ export class OrdersService {
 
   /** Para el panel de Gestión → Pagos y Almacén → Despacho: pedidos por estado (todos si no se pide uno). */
   async listarPedidos(estado?: EstadoPedido) {
-    return this.prisma.order.findMany({
+    const pedidos = await this.prisma.order.findMany({
       where: estado ? { estado } : { estado: { in: [EstadoPedido.PENDIENTE_PAGO, EstadoPedido.PAGADO, EstadoPedido.CANCELADO_DEVUELTO] } },
       include: { asesor: { include: { user: true } }, items: true, entrega: true },
       orderBy: { createdAt: 'desc' },
     });
+    // RF-030: fecha de entrega prometida, calculada (no se persiste) a partir
+    // de pagadoEn — ver common/sla.util.ts para la regla de corte.
+    return pedidos.map((p) => ({
+      ...p,
+      fechaEntregaPrometida: p.pagadoEn ? calcularFechaEntregaPrometida(p.pagadoEn) : null,
+    }));
   }
 
   /**
@@ -237,7 +244,7 @@ export class OrdersService {
   }
 
   /** RF-022/RF-036: tras el pago aprobado, confirma el pedido y lo crea en Odoo. Idempotente por referenciaWeb. */
-  async confirmarPagoYEnviarAOdoo(orderId: string, culqiChargeId: string) {
+  async confirmarPagoYEnviarAOdoo(orderId: string) {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { asesor: true, items: true } });
 
     if (order.estado === EstadoPedido.PAGADO && order.odooSaleOrderId) {

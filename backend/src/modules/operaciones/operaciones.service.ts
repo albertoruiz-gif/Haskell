@@ -60,8 +60,10 @@ export class OperacionesService {
     return this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PICKING } });
   }
 
-  // RF-026: genera packing (bultos) — requiere picking sin diferencias abiertas
-  async confirmarPacking(orderId: string, bultos: number) {
+  // RF-026: genera packing — requiere picking sin diferencias abiertas.
+  // El conteo de bultos se registra recién en asignarTransportista (RF-027),
+  // que es donde vive el campo Entrega.bultos.
+  async confirmarPacking(orderId: string) {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
     if (order.estado !== EstadoPedido.PICKING) {
       throw new BadRequestException('Completá el picking antes de empacar.');
@@ -150,14 +152,5 @@ export class OperacionesService {
       where: { orderId },
       data: { estado: EstadoEntrega.FALLIDO, motivoFallo: motivo, observaciones },
     });
-  }
-
-  // RF-030/DP-001/DP-002: calculo de SLA — pendiente cerrar si son horas calendario o habiles
-  calcularFechaLimiteSLA(pagoConfirmadoEn: Date, slaHoras = 48): Date {
-    const cortAM = new Date(pagoConfirmadoEn);
-    cortAM.setHours(14, 0, 0, 0);
-    // TODO DP-002: si el pago es despues de las 14:00, definir regla exacta de corte antes de contar las 48h
-    const base = pagoConfirmadoEn <= cortAM ? pagoConfirmadoEn : cortAM;
-    return new Date(base.getTime() + slaHoras * 60 * 60 * 1000);
   }
 }
