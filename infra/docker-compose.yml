@@ -1,5 +1,3 @@
-version: '3.9'
-
 # Uso local (desarrollo): los valores por defecto de abajo (plataforma/plataforma)
 # alcanzan. En Test/Producción, definir POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB/
 # NEXT_PUBLIC_API_URL en infra/.env (no versionado — ver infra/.env.example) con
@@ -16,6 +14,12 @@ services:
       - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-plataforma} -d ${POSTGRES_DB:-plataforma_dev}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   backend:
     build: ../backend
@@ -25,7 +29,9 @@ services:
     ports:
       - '3000:3000'
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
   frontend:
     build:
@@ -36,6 +42,7 @@ services:
       - '3001:3000'
     depends_on:
       - backend
+    restart: unless-stopped
 
   # Proxy reverso — puerta de entrada única en :80 (nginx.conf: /api y /uploads
   # al backend, todo lo demás al frontend). Necesario en Test/Producción porque
@@ -50,6 +57,7 @@ services:
     depends_on:
       - backend
       - frontend
+    restart: unless-stopped
 
 volumes:
   pgdata:
