@@ -100,8 +100,16 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: 1
 
+  # Deshabilitado (2026-08-02): el equipo actual no usa el cluster EKS
+  # (plataforma-comercial nunca se creo, ni el rol IAM github-actions-deploy,
+  # ni ECR_REGISTRY/ACCOUNT_ID reales estan completados) — se descarto
+  # Kubernetes por escala (ver docs/DESPLIEGUE_AWS.md) a favor de 2 EC2 con
+  # Docker Compose, desplegadas a mano por SSM/SSH. Se deja el job entero
+  # (no se borra) por si el proyecto escala a e-commerce publico y conviene
+  # retomar Kubernetes — para reactivarlo, completar ECR_REGISTRY/ACCOUNT_ID
+  # y sacar el "false && " de este if.
   push-y-deploy-qa:
-    if: github.ref == 'refs/heads/main'
+    if: false && github.ref == 'refs/heads/main'
     needs: [build-and-scan-imagen]
     runs-on: ubuntu-latest
     environment: qa
@@ -124,7 +132,9 @@ jobs:
           kubectl set image deployment/backend backend=${{ env.ECR_REGISTRY }}/plataforma/backend:${{ github.sha }} -n plataforma
           kubectl set image deployment/frontend frontend=${{ env.ECR_REGISTRY }}/plataforma/frontend:${{ github.sha }} -n plataforma
 
+  # Deshabilitado (2026-08-02) — mismo motivo que push-y-deploy-qa arriba.
   deploy-produccion:
+    if: false
     needs: [push-y-deploy-qa]
     runs-on: ubuntu-latest
     environment: production # gate de aprobacion manual (RFD 11.4, paso 5) — configurar reviewers en Settings > Environments
