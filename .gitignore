@@ -24,6 +24,9 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Archivos de bloqueo temporal de Office (se crean al tener el archivo abierto)
+~$*
+
 # Config local de Claude Code (permisos de esta sesión, no del proyecto)
 .claude/settings.local.json
 
