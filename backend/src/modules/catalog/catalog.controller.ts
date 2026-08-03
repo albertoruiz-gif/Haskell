@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post,
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
+import { OdooClient } from '../odoo/odoo.client';
 import { CrearLineaDto } from './dto/crear-linea.dto';
 import { ActualizarPrecioDto } from './dto/actualizar-precio.dto';
 import { ActualizarLineaDto } from './dto/actualizar-linea.dto';
@@ -21,6 +22,7 @@ export class CatalogController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
+    private readonly odoo: OdooClient,
   ) {}
 
   // Roles que administran el catalogo pero no son asesores (sin canal
@@ -191,6 +193,47 @@ export class CatalogController {
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
   crearLinea(@Body() dto: CrearLineaDto) {
     return this.prisma.catalogLine.create({ data: dto });
+  }
+
+  // Sincroniza nombre y PVP desde Odoo (fuente real del catálogo) hacia las
+  // líneas ya existentes, por SKU (default_code). A propósito NO toca
+  // descripción/beneficios/propiedades/modoUso/activos: en Odoo viven todos
+  // mezclados en un solo campo de texto (description_sale) y separarlos bien
+  // requeriría un parser que todavía no existe — se arma aparte cuando haga
+  // falta. Tampoco crea líneas nuevas para SKUs de Odoo sin coincidencia acá
+  // (no hay forma de saber a qué canal/catálogo asignarlas automáticamente).
+  @Post('admin/sincronizar-odoo')
+  @Roles('ADMINISTRADOR', 'GESTOR_CATALOGO')
+  async sincronizarDesdeOdoo() {
+    const productosOdoo = await this.odoo.obtenerProductos();
+    let actualizados = 0;
+    let sinCambios = 0;
+    let sinCoincidencia = 0;
+
+    for (const p of productosOdoo) {
+      if (!p.default_code) continue;
+      const lineas = await this.prisma.catalogLine.findMany({ where: { sku: p.default_code } });
+      if (lineas.length === 0) {
+        sinCoincidencia++;
+        continue;
+      }
+      for (const linea of lineas) {
+        const nombreCambio = p.name && p.name !== linea.nombre;
+        const pvpCambio = Number(linea.pvpCampania) !== p.list_price;
+        if (!nombreCambio && !pvpCambio) {
+          sinCambios++;
+          continue;
+        }
+        await this.prisma.catalogLine.update({
+          where: { id: linea.id },
+          data: { nombre: p.name ?? linea.nombre, pvpCampania: p.list_price },
+        });
+        await this.recalcularPacksQueUsanComponente(linea.id);
+        actualizados++;
+      }
+    }
+
+    return { productosEnOdoo: productosOdoo.length, actualizados, sinCambios, sinCoincidencia };
   }
 
   @Patch('admin/lineas/:id/precio')

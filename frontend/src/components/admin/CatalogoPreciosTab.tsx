@@ -20,6 +20,8 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
   const [precios, setPrecios] = useState<Record<string, string>>({});
   const [editando, setEditando] = useState<Linea | null>(null);
   const [creando, setCreando] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [resultadoSync, setResultadoSync] = useState<string | null>(null);
 
   const {
     busqueda,
@@ -82,6 +84,26 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
     }
   }
 
+  async function sincronizarDesdeOdoo() {
+    setError(null);
+    setResultadoSync(null);
+    setSincronizando(true);
+    try {
+      const r = await apiFetch<{ productosEnOdoo: number; actualizados: number; sinCambios: number; sinCoincidencia: number }>(
+        '/catalogo/admin/sincronizar-odoo',
+        { method: 'POST' },
+      );
+      setResultadoSync(
+        `${r.actualizados} producto(s) actualizado(s), ${r.sinCambios} ya estaban al día, ${r.sinCoincidencia} sin coincidencia por SKU (de ${r.productosEnOdoo} en Odoo).`,
+      );
+      await cargarLineas(catalogoId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo sincronizar con Odoo.');
+    } finally {
+      setSincronizando(false);
+    }
+  }
+
   async function subirFoto(id: string, archivo: File) {
     setError(null);
     try {
@@ -119,12 +141,27 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
         </p>
       )}
 
-      <div className="rounded-card bg-white p-3 shadow-sm lg:max-w-sm">
-        <p className="text-sm font-medium text-bosque">Producto nuevo</p>
-        <p className="mt-1 text-xs text-bosque/50">El portafolio de Haskell ya está cargado — esto es para cuando se suma un producto que todavía no existe.</p>
-        <button onClick={() => setCreando(true)} className="mt-2 w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">
-          + Nuevo producto
-        </button>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:max-w-2xl">
+        <div className="rounded-card bg-white p-3 shadow-sm">
+          <p className="text-sm font-medium text-bosque">Producto nuevo</p>
+          <p className="mt-1 text-xs text-bosque/50">El portafolio de Haskell ya está cargado — esto es para cuando se suma un producto que todavía no existe.</p>
+          <button onClick={() => setCreando(true)} className="mt-2 w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">
+            + Nuevo producto
+          </button>
+        </div>
+
+        <div className="rounded-card bg-white p-3 shadow-sm">
+          <p className="text-sm font-medium text-bosque">Sincronizar con Odoo</p>
+          <p className="mt-1 text-xs text-bosque/50">Actualiza nombre y precio (PVP) desde Odoo para los productos que ya existen acá, por SKU.</p>
+          <button
+            onClick={sincronizarDesdeOdoo}
+            disabled={sincronizando}
+            className="mt-2 w-full rounded-pill bg-acento py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {sincronizando ? 'Sincronizando…' : 'Sincronizar ahora'}
+          </button>
+          {resultadoSync && <p className="mt-2 text-xs text-bosque/60">{resultadoSync}</p>}
+        </div>
       </div>
 
       <ErrorBanner mensaje={error} />
