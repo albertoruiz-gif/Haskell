@@ -19,7 +19,12 @@ const MARGEN = Number(process.env.CATALOGO_MARGEN ?? 0.25);
 
 const XLSX_PATH = process.env.CATALOGO_XLSX_PATH ?? path.join(__dirname, '../../../catalogo-haskell/productos_haskell.xlsx');
 const IMAGENES_DIR = process.env.CATALOGO_IMAGENES_DIR ?? path.join(__dirname, '../../../catalogo-haskell/imagenes_principales');
-const UPLOADS_DIR = path.join(__dirname, '../../uploads/catalogo');
+// process.cwd() (siempre /app en el contenedor, ver Dockerfile WORKDIR) en
+// vez de __dirname: este archivo se compila/ejecuta desde ubicaciones
+// distintas segun como se invoque (ts-node vs tsc a un outDir aparte), y
+// __dirname relativo rompía silenciosamente la ruta — las fotos se
+// copiaban, pero fuera de donde main.ts sirve los estaticos (/app/uploads).
+const UPLOADS_DIR = process.env.CATALOGO_UPLOADS_DIR ?? path.join(process.cwd(), 'uploads/catalogo');
 
 function val(cell: any): any {
   if (cell === null || cell === undefined) return null;

@@ -28,6 +28,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-plataforma}:${POSTGRES_PASSWORD:-plataforma}@postgres:5432/${POSTGRES_DB:-plataforma_dev}
     ports:
       - '3000:3000'
+    volumes:
+      # Persistente a propósito: fotos de catálogo y evidencias de entrega
+      # (multer las guarda acá, main.ts las sirve desde acá). Sin esto, cada
+      # `docker compose up --build` recrea el contenedor desde cero y se
+      # pierde todo lo subido — ya pasó una vez.
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,3 +75,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:
