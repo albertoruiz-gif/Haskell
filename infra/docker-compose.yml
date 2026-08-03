@@ -38,6 +38,7 @@ services:
       context: ../frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
+        NEXT_PUBLIC_ODOO_LIVECHAT_ACTIVO: ${NEXT_PUBLIC_ODOO_LIVECHAT_ACTIVO:-false}
     ports:
       - '3001:3000'
     depends_on:

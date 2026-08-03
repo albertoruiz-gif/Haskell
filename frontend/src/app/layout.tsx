@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import { NavTabs } from '../components/ui/NavTabs';
 import { AuthGate } from '../components/auth/AuthGate';
@@ -8,6 +9,12 @@ export const metadata: Metadata = {
   title: 'Plataforma Comercial Multicanal',
   description: 'Catálogo, carrito, gestión y almacén — asesores multicanal',
 };
+
+// Hasky (Live Chat de Odoo) — se activa solo cuando NEXT_PUBLIC_ODOO_LIVECHAT_ACTIVO=true
+// en el .env del ambiente. En Desarrollo y Testeo queda en false a propósito:
+// el widget conecta contra el Odoo real (Haskell_Distribuidor), así que probarlo
+// ahí crearía leads/oportunidades reales en el CRM. Solo Producción lo activa.
+const livechatActivo = process.env.NEXT_PUBLIC_ODOO_LIVECHAT_ACTIVO === 'true';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -21,6 +28,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </main>
           </CartProvider>
         </div>
+        {livechatActivo && (
+          <>
+            <Script
+              src="https://efficaxba-online.odoo.com/im_livechat/loader/2"
+              strategy="lazyOnload"
+            />
+            <Script
+              src="https://efficaxba-online.odoo.com/im_livechat/assets_embed.js"
+              strategy="lazyOnload"
+            />
+          </>
+        )}
       </body>
     </html>
   );
