@@ -13,7 +13,8 @@
     "seed:catalogo": "ts-node prisma/seeds/catalogo.seed.ts",
     "seed:demo": "ts-node prisma/seeds/demo-data.seed.ts",
     "seed:roles": "ts-node prisma/seeds/roles-comerciales.seed.ts",
-    "seed:inventario": "ts-node prisma/seeds/inventario.seed.ts"
+    "seed:inventario": "ts-node prisma/seeds/inventario.seed.ts",
+    "test:odoo": "ts-node scripts/test-odoo-connection.ts"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.637.0",

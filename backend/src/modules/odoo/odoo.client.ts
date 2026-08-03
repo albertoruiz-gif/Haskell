@@ -8,6 +8,15 @@ import { SecretsService } from '../../config/secrets.service';
  * escribe en Odoo por esta via — no hay webhooks salientes de Odoo porque
  * el plan Online no permite modulos con codigo custom. No requiere VPN:
  * Odoo Online expone un endpoint HTTPS publico.
+ *
+ * Multi-compañia: esta cuenta Odoo tiene varias compañias (Haskell_Distribuidor,
+ * Haskell_Perú, Efficax Solutions SA). Cada llamada de execute() se ancla via
+ * contexto (allowed_company_ids/company_id) a ODOO_COMPANY_ID — ver ese metodo.
+ * A proposito NO se agrega un filtro de dominio ['company_id','=',X] automatico
+ * en searchRead: varios modelos (product.product, res.partner) suelen tener
+ * registros "compartidos" con company_id=False, y un filtro asi los ocultaria
+ * de golpe. Si algun metodo especifico necesita excluir explicitamente otras
+ * compañias en una lectura, se agrega el domain puntual en ese metodo.
  */
 @Injectable()
 export class OdooClient {
@@ -46,15 +55,30 @@ export class OdooClient {
 
   private async execute<T>(model: string, method: string, args: unknown[], kwargs: Record<string, unknown> = {}): Promise<T> {
     const uid = await this.authenticate();
-    const { db, apiKey } = this.secrets.odoo();
+    const { db, apiKey, companyId } = this.secrets.odoo();
     const http = await this.client();
+    // Ancla TODA llamada (lectura o escritura) a la compañia configurada
+    // (ODOO_COMPANY_ID), sin depender de cual sea la compañia por defecto
+    // del usuario tecnico en ese momento. allowed_company_ids limita que
+    // compañias puede "ver" la llamada; company_id fija bajo cual compañia
+    // se crean los registros nuevos (create/write). Si el caller ya mandaba
+    // su propio context, se respeta y solo se completa lo que falte.
+    const contextPrevio = (kwargs.context as Record<string, unknown>) ?? {};
+    const kwargsConCompania: Record<string, unknown> = {
+      ...kwargs,
+      context: {
+        allowed_company_ids: [companyId],
+        company_id: companyId,
+        ...contextPrevio,
+      },
+    };
     const { data } = await http.post('/jsonrpc', {
       jsonrpc: '2.0',
       method: 'call',
       params: {
         service: 'object',
         method: 'execute_kw',
-        args: [db, uid, apiKey, model, method, args, kwargs],
+        args: [db, uid, apiKey, model, method, args, kwargsConCompania],
       },
     });
     if (data.error) {

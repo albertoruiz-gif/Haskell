@@ -38,11 +38,21 @@ export class SecretsService implements OnModuleInit {
   }
 
   odoo() {
+    const companyIdRaw = this.get('plataforma/odoo', 'companyId', 'ODOO_COMPANY_ID');
+    const companyId = Number(companyIdRaw);
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      throw new Error(
+        `ODOO_COMPANY_ID invalido: "${companyIdRaw}". Debe ser el ID numerico de la compañia ` +
+          `(res.company) en Odoo — ver Ajustes > Usuarios y compañias > Compañias. ` +
+          `Se exige a proposito para que ninguna llamada a Odoo opere sin compañia explicita.`,
+      );
+    }
     return {
       url: this.get('plataforma/odoo', 'url', 'ODOO_URL'),
       db: this.get('plataforma/odoo', 'db', 'ODOO_DB'),
       username: this.get('plataforma/odoo', 'username', 'ODOO_USERNAME'),
       apiKey: this.get('plataforma/odoo', 'apiKey', 'ODOO_API_KEY'),
+      companyId,
     };
   }
 

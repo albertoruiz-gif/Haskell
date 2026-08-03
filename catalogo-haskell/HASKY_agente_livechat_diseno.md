@@ -19,6 +19,45 @@ Fecha: 2026-08-02 · Estado: diseño cerrado, pendiente de implementación en Od
 1. **Fase 1 — Productos (pública)**: consultas de catálogo, precios, presentaciones, disponibilidad. Requiere solo el catálogo cargado en Odoo.
 2. **Fase 2 — Financiera (zona logueada de asesores)**: cobranzas pendientes y saldo de línea de crédito, cada asesor solo ve lo suyo. Requiere facturas y límites de crédito en Odoo + identificación del asesor en el chat.
 
+## Registro de venta perdida (acordado 2026-08-02)
+
+Cuando un asesor pida un producto **sin stock** o **no disponible en Perú**, Hasky:
+1. Pide **como máximo: nombre del asesor y producto** (cantidad si la ofrece espontáneamente). **Nunca pide datos de la clienta final.**
+2. Crea una oportunidad en la app **CRM** y la marca como perdida con motivo:
+   - "Sin stock Perú" (problema de reposición), o
+   - "No disponible en Perú" (problema de surtido).
+3. Queda con fecha, asesor, producto y cantidad → alimenta el KPI de ventas perdidas.
+
+**Política de datos por canal (regla de negocio):**
+- **Canal asesoras (venta directa):** la cartera de clientas es propiedad de la asesora. El CRM NO se explota comercialmente: el registro de venta perdida es solo estadístico (asesor + producto + cantidad), sin datos de la clienta final.
+- **Canales Salones de Belleza y Retail:** el CRM SÍ se explota — los pedidos que llegan por los asesores de estos canales pueden registrar el cliente (salón/tienda), con seguimiento comercial completo.
+
+En la práctica esto se configura separando los leads por **equipo de ventas/canal** en CRM, con captura de datos distinta por canal.
+
+## Fase 3 — Asistente de cartera (canal Salones de Belleza y Retail)
+
+Acordado 2026-08-02. Para asesores de Salones/Retail, Hasky además **escribe y consulta** la cartera del asesor:
+
+**Registrar (con confirmación previa de Hasky antes de grabar):**
+- Ventas futuras / acuerdos con el cliente (notas y actividades en la ficha del salón).
+- Visitas programadas (actividades con fecha).
+- Datos del cliente salón/tienda (contacto en CRM, asignado al asesor).
+
+**Consultar (ejemplos):**
+- "¿Cuál fue el acuerdo con mi cliente de la peluquería Rosita?"
+- "¿Cuánto y qué le vendí la última vez?" (historial de pedidos)
+- "¿Qué pagos pendientes tiene?" (facturas abiertas)
+- "¿Cuánta línea de crédito disponible le queda?" (límite de crédito en la ficha)
+
+**Condiciones de diseño:**
+1. Solo en **zona logueada**: la identidad del asesor viaja al chat; las herramientas de Hasky filtran TODO por "clientes asignados a este asesor" (enforcement en la herramienta, no solo en el prompt). Un asesor nunca ve cartera ajena.
+2. Toda escritura requiere confirmación explícita del asesor en el chat.
+3. Depende de que pedidos/facturas del canal se registren en Odoo (integración web→Odoo ya planificada) y del campo límite de crédito configurado por cliente.
+
+Indicador: reportes nativos de CRM por motivo de pérdida (por mes/producto/asesor); el backend de la web puede leerlos vía JSON-RPC (misma conexión ya probada, compañía Haskell_Distribuidor) para la pestaña de indicadores.
+
+Requisitos: app CRM instalada (sin costo extra) + verificar en implementación que el agente IA puede crear registros (plan B nativo: paso guiado de chatbot que crea el lead).
+
 ## Borrador de instrucciones (prompt) para Hasky
 
 > Eres Hasky, el asistente virtual de Haskell Perú (Haskell_Distribuidor). Atiendes a asesoras y asesores de venta en español, con tono cercano y amable, respuestas breves y concretas.
