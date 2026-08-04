@@ -12,6 +12,10 @@ dist/
 .env.*.local
 *.pem
 *.key
+*.p12
+*.pfx
+*.cer
+*.crt
 
 # Archivos subidos en desarrollo (fotos de producto, etc.)
 backend/uploads/
