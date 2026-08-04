@@ -311,7 +311,22 @@ export class CatalogController {
   @Delete('admin/lineas/:id')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
   async eliminarLinea(@Param('id') id: string) {
+    // Antes de borrar las ofertas localmente: si alguna quedó reflejada en
+    // Odoo (product.pricelist.item, ver campaigns.service.sincronizarOfertaAOdoo),
+    // hay que retirarla también — si no, Odoo seguiría mostrando un precio
+    // de oferta para un producto que ya no existe en el catálogo web.
+    const ofertasConItemOdoo = await this.prisma.offer.findMany({
+      where: { catalogLineId: id, odooPricelistItemId: { not: null } },
+      select: { odooPricelistItemId: true },
+    });
     await this.prisma.offer.deleteMany({ where: { catalogLineId: id } });
+    for (const { odooPricelistItemId } of ofertasConItemOdoo) {
+      try {
+        await this.odoo.eliminarItemPricelist(odooPricelistItemId as number);
+      } catch {
+        // best-effort, igual que en campaigns.service — no bloquea el borrado del producto
+      }
+    }
     // Si este producto es componente de algún pack, hay que sacarlo de ahí
     // y recalcular el precio de esos packs — si no, quedarían con un total
     // que ya no corresponde a lo que realmente incluyen.

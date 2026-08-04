@@ -1,8 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { EstadoEntrega, EstadoPedido } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { OdooClient } from '../odoo/odoo.client';
 import { InventarioService } from '../inventario/inventario.service';
+import { formatearNumeroPedido } from '../../common/numero-pedido.util';
+import { calcularEstadoSaludEntrega, calcularFechaEntregaPrometida } from '../../common/sla.util';
 
 /**
  * Picking/packing/despacho/entrega — pantalla "Almacén" del mockup.
@@ -12,11 +14,60 @@ import { InventarioService } from '../inventario/inventario.service';
  */
 @Injectable()
 export class OperacionesService {
+  private readonly logger = new Logger(OperacionesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly odoo: OdooClient,
     private readonly inventario: InventarioService,
   ) {}
+
+  /**
+   * Espejo de solo lectura del estado de Delivery en Odoo (stock.picking) —
+   * ver catalogo-haskell/PROMPT_sync_delivery_a_odoo.md. Best-effort: si
+   * Odoo falla, el cambio de estado en la plataforma igual queda hecho (la
+   * plataforma sigue siendo la fuente de verdad), solo se registra en el log.
+   */
+  private async sincronizarDeliveryAOdoo(orderId: string) {
+    try {
+      const order = await this.prisma.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: { asesor: true, entrega: { include: { transportista: { include: { user: true } } } } },
+      });
+
+      let transportistaPartnerId: number | null = null;
+      if (order.entrega) {
+        const t = order.entrega.transportista;
+        transportistaPartnerId = await this.odoo.upsertTransportistaComoPartner({
+          odooPartnerId: t.odooPartnerId,
+          nombre: t.user.nombre,
+          telefono: t.telefono,
+        });
+        if (!t.odooPartnerId) {
+          await this.prisma.transportista.update({ where: { id: t.id }, data: { odooPartnerId: transportistaPartnerId } });
+        }
+      }
+
+      await this.odoo.sincronizarDeliveryAOdoo({
+        pedidoExternoId: formatearNumeroPedido(order.canal, order.numero),
+        clientePartnerId: order.asesor.odooPartnerId,
+        transportistaPartnerId,
+        scheduledDate: order.pagadoEn ? calcularFechaEntregaPrometida(order.pagadoEn) : null,
+        dateDone: order.entrega?.estado === 'ENTREGADO' ? order.entrega.updatedAt : null,
+        enTransito: order.entrega?.estado === 'EN_RUTA',
+        recibidoNombre: order.entrega?.receptor ?? null,
+        recibidoDni: order.entrega?.documentoReceptor ?? null,
+        devueltoCausa: order.entrega?.motivoFallo ?? null,
+        estadoDelivery: calcularEstadoSaludEntrega({
+          pagadoEn: order.pagadoEn,
+          entregaEstado: order.entrega?.estado ?? null,
+          entregaUpdatedAt: order.entrega?.updatedAt ?? null,
+        }),
+      });
+    } catch (e) {
+      this.logger.warn(`No se pudo sincronizar delivery a Odoo para pedido ${orderId}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
 
   // RF-024: picking list — pedido + lineas + ubicacion (la ubicacion vive en Odoo stock.move)
   async pickingList(orderId: string) {
@@ -73,11 +124,13 @@ export class OperacionesService {
 
   // RF-027: asigna transportista y registra bultos antes de la aceptación
   async asignarTransportista(orderId: string, transportistaId: string, bultos: number) {
-    return this.prisma.entrega.upsert({
+    const entrega = await this.prisma.entrega.upsert({
       where: { orderId },
       create: { orderId, transportistaId, bultos, estado: EstadoEntrega.ASIGNADO },
       update: { transportistaId, bultos, estado: EstadoEntrega.ASIGNADO },
     });
+    await this.sincronizarDeliveryAOdoo(orderId);
+    return entrega;
   }
 
   // RF-022 (RN-022): el transportista acepta la mercadería antes de repartir.
@@ -91,10 +144,12 @@ export class OperacionesService {
       throw new BadRequestException('Solo el transportista asignado puede aceptar los bultos.');
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO_TRANSPORTISTA } });
-    return this.prisma.entrega.update({
+    const actualizada = await this.prisma.entrega.update({
       where: { orderId },
       data: { estado: EstadoEntrega.ACEPTADO, aceptadoEn: new Date() },
     });
+    await this.sincronizarDeliveryAOdoo(orderId);
+    return actualizada;
   }
 
   // Sale a reparto — entre aceptar los bultos y la entrega/fallo final.
@@ -104,7 +159,9 @@ export class OperacionesService {
       throw new BadRequestException('Primero hay que aceptar los bultos antes de salir a reparto.');
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.EN_RUTA } });
-    return this.prisma.entrega.update({ where: { orderId }, data: { estado: EstadoEntrega.EN_RUTA } });
+    const actualizada = await this.prisma.entrega.update({ where: { orderId }, data: { estado: EstadoEntrega.EN_RUTA } });
+    await this.sincronizarDeliveryAOdoo(orderId);
+    return actualizada;
   }
 
   // RF-028: entrega exitosa con receptor + evidencia (foto/firma/OTP — exacto queda en DP-010)
@@ -118,10 +175,12 @@ export class OperacionesService {
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO } });
     // Recién acá sale físicamente del lote — hasta este momento solo estaba comprometido.
     await this.inventario.consumirParaOrder(orderId);
-    return this.prisma.entrega.update({
+    const actualizada = await this.prisma.entrega.update({
       where: { orderId },
       data: { estado: EstadoEntrega.ENTREGADO, montoPago: entregaActual.transportista.tarifaPorEntrega, ...data },
     });
+    await this.sincronizarDeliveryAOdoo(orderId);
+    return actualizada;
   }
 
   /** Pagos a transportistas: lista de entregas completadas, pagadas o no (módulo Transporte). */
@@ -148,9 +207,11 @@ export class OperacionesService {
     // Simplificación: la mercadería vuelve directo a disponible (sin un
     // sub-flujo de inspección de devolución física aparte, ver EP-21/documento).
     await this.inventario.liberarParaOrder(orderId);
-    return this.prisma.entrega.update({
+    const actualizada = await this.prisma.entrega.update({
       where: { orderId },
       data: { estado: EstadoEntrega.FALLIDO, motivoFallo: motivo, observaciones },
     });
+    await this.sincronizarDeliveryAOdoo(orderId);
+    return actualizada;
   }
 }

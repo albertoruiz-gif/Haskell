@@ -176,6 +176,9 @@ model Transportista {
   telefono          String
   placa             String?
   tarifaPorEntrega  Decimal  @db.Decimal(10, 2)
+  // res.partner en Odoo, tipo proveedor de servicio (se le factura al pagarle) —
+  // ver catalogo-haskell/PROMPT_sync_delivery_a_odoo.md
+  odooPartnerId     Int?
 
   entregas          Entrega[]
 
@@ -399,6 +402,11 @@ model Offer {
   creadoPorId    String
   aprobadoPorId  String?
   activa         Boolean        @default(true)
+  // Reflejo en Odoo (product.pricelist.item, lista "Ofertas vigentes") para
+  // que facturación/Hasky/reportes lean el precio real sin depender de esta
+  // plataforma — ver catalogo-haskell/PROMPT_trasladar_ofertas_a_odoo.md.
+  // Null si la oferta no tiene catalogLineId o si la sincronización falló.
+  odooPricelistItemId Int?
 
   createdAt      DateTime       @default(now())
 
@@ -461,7 +469,13 @@ model Order {
   subtotalAsesor          Decimal      @db.Decimal(10, 2)
   totalCulqi              Decimal      @db.Decimal(10, 2)
   estado                  EstadoPedido @default(BORRADOR)
-  referenciaWeb            String       @unique @default(cuid()) // idempotencia RF-020
+  referenciaWeb            String       @unique @default(cuid()) // idempotencia RF-020, no pensado para mostrarse
+  // Numero de pedido legible para la asesora (confirmacion web/email) y para
+  // matchear el pedido en Odoo (stock.picking.x_pedido_externo_id) — a
+  // diferencia de referenciaWeb, este SI se muestra y se puede dictar/escribir
+  // a mano. Formato de exhibicion (ver common/numero-pedido.util.ts):
+  // HSK_<CANAL>_<este numero con ceros a la izquierda>, ej. HSK_MIN_000123.
+  numero                   Int          @unique @default(autoincrement())
   odooSaleOrderId          Int?
   odooSaleOrderName        String?
 

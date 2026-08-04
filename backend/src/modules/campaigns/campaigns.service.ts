@@ -1,10 +1,16 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { AlcanceOferta, Canal, EstadoCatalogo, TipoPromocion } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
+import { OdooClient } from '../odoo/odoo.client';
 
 @Injectable()
 export class CampaignsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CampaignsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly odoo: OdooClient,
+  ) {}
 
   // RF-040: crear campaña con al menos un canal objetivo
   async crearCampania(data: {
@@ -97,7 +103,7 @@ export class CampaignsService {
       throw new BadRequestException('La oferta necesita descuentoPct o precioFijo.');
     }
 
-    return this.prisma.offer.create({
+    const oferta = await this.prisma.offer.create({
       data: {
         catalogId: data.catalogId,
         catalogLineId: data.catalogLineId,
@@ -110,6 +116,45 @@ export class CampaignsService {
         creadoPorId: data.creadoPorId,
       },
     });
+
+    if (data.catalogLineId) {
+      await this.sincronizarOfertaAOdoo(oferta.id, data.catalogLineId, data.precioFijo, data.descuentoPct, data.inicio, data.fin);
+    }
+
+    return oferta;
+  }
+
+  /**
+   * Refleja la oferta recién creada en Odoo como product.pricelist.item de
+   * la lista "Ofertas vigentes" (ver catalogo-haskell/PROMPT_trasladar_ofertas_a_odoo.md).
+   * Sincronización en vivo (por evento), best-effort: si Odoo falla, la
+   * oferta igual queda creada en la plataforma — no bloquea el flujo
+   * comercial por una falla externa; solo se registra en el log y
+   * odooPricelistItemId queda null (se puede reintentar a mano).
+   */
+  private async sincronizarOfertaAOdoo(
+    offerId: string,
+    catalogLineId: string,
+    precioFijo: number | undefined,
+    descuentoPct: number | undefined,
+    inicio: Date,
+    fin: Date,
+  ) {
+    try {
+      const linea = await this.prisma.catalogLine.findUniqueOrThrow({ where: { id: catalogLineId } });
+      // Mismo calculo que catalog.controller.mapearLinea: el precio fijo
+      // manda si esta seteado; si no, el descuento se aplica sobre pvpCampania.
+      const precioEfectivo = precioFijo
+        ? Number(precioFijo)
+        : descuentoPct
+          ? Number(linea.pvpCampania) * (1 - Number(descuentoPct) / 100)
+          : Number(linea.pvpCampania);
+
+      const odooPricelistItemId = await this.odoo.crearItemPricelistOferta({ sku: linea.sku, precioEfectivo, inicio, fin });
+      await this.prisma.offer.update({ where: { id: offerId }, data: { odooPricelistItemId } });
+    } catch (e) {
+      this.logger.warn(`No se pudo reflejar en Odoo la oferta ${offerId}: ${e instanceof Error ? e.message : e}`);
+    }
   }
 
   /** Devuelve la oferta vigente (si existe) para una linea de catalogo en el momento actual. */
@@ -140,6 +185,14 @@ export class CampaignsService {
   }
 
   async desactivarOferta(id: string) {
-    return this.prisma.offer.update({ where: { id }, data: { activa: false } });
+    const oferta = await this.prisma.offer.update({ where: { id }, data: { activa: false } });
+    if (oferta.odooPricelistItemId) {
+      try {
+        await this.odoo.eliminarItemPricelist(oferta.odooPricelistItemId);
+      } catch (e) {
+        this.logger.warn(`No se pudo retirar de Odoo el pricelist.item de la oferta ${id}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    return oferta;
   }
 }

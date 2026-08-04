@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
+import { formatearNumeroPedido } from '../../lib/numeroPedido';
 import { useCart } from '../../components/cart/CartContext';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
@@ -53,12 +54,12 @@ export default function CarritoPage() {
     setError(null);
     setPagando(true);
     try {
-      const pedido = await apiFetch<{ id: string; referenciaWeb: string }>('/orders', {
+      const pedido = await apiFetch<{ id: string; numero: number; canal: string; referenciaWeb: string }>('/orders', {
         method: 'POST',
         body: { items: items.map((i) => ({ catalogLineId: i.catalogLineId, cantidad: i.cantidad })) },
       });
       vaciar();
-      setPedidoOk(pedido.referenciaWeb ?? pedido.id);
+      setPedidoOk(pedido.numero ? formatearNumeroPedido(pedido.canal, pedido.numero) : pedido.referenciaWeb ?? pedido.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo crear el pedido.');
     } finally {

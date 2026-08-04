@@ -11,7 +11,7 @@ Fecha: 2026-08-02 · Estado: diseño cerrado, pendiente de implementación en Od
 | Información técnica | Sin restricción: puede dar descripción, beneficios, modo de uso y activos (info pública en el frasco y web de Brasil) |
 | Ubicación del widget | Esquina inferior derecha, **toda la web** |
 | Horario | 24/7 |
-| Escalamiento | Al superior inmediato del asesor. Fase inicial: un solo operador (Alberto), porque cada supervisor requiere usuario de Odoo (asiento de pago). |
+| Escalamiento | Por canal (definido 2026-08-03): Minorista → Líder de Equipo o Supervisor; Salones de Belleza y demás canales → Gerente Comercial. Cada operador requiere usuario de Odoo (asiento de pago). Etapa inicial: Alberto como único operador; al incorporar al equipo a Odoo se activa el enrutamiento por canal. |
 | Compañía | Todo fijado a **Haskell_Distribuidor** (ID 2) |
 
 ## Fases
@@ -20,6 +20,8 @@ Fecha: 2026-08-02 · Estado: diseño cerrado, pendiente de implementación en Od
 2. **Fase 2 — Financiera (zona logueada de asesores)**: cobranzas pendientes y saldo de línea de crédito, cada asesor solo ve lo suyo. Requiere facturas y límites de crédito en Odoo + identificación del asesor en el chat.
 
 ## Registro de venta perdida (acordado 2026-08-02)
+
+**Regla afinada 2026-08-03 (Variante A):** venta perdida = solo productos del catálogo Perú **sin stock** (lead "Venta perdida: [producto]", motivo "Sin stock Perú"). Productos/presentaciones que **no existen** en el catálogo Perú NO son venta perdida: se registran aparte como lead "Solicitud no disponible: [producto]" — señal de demanda para decidir futuras importaciones de Brasil.
 
 Cuando un asesor pida un producto **sin stock** o **no disponible en Perú**, Hasky:
 1. Pide **como máximo: nombre del asesor y producto** (cantidad si la ofrece espontáneamente). **Nunca pide datos de la clienta final.**
@@ -58,6 +60,21 @@ Indicador: reportes nativos de CRM por motivo de pérdida (por mes/producto/ases
 
 Requisitos: app CRM instalada (sin costo extra) + verificar en implementación que el agente IA puede crear registros (plan B nativo: paso guiado de chatbot que crea el lead).
 
+## Contactos de escalamiento (definidos 2026-08-03)
+
+| Cargo | Nombre | Email | WhatsApp |
+|---|---|---|---|
+| Gerente Comercial (Salones de Belleza y demás canales) | Rosalía Ruiz | rosiruiz0111@gmail.com | +51 960 997 929 |
+| Líder de Equipo Minorista Zona 1 | Mercedes | mercedes@gmail.com | +51 996 138 672 |
+| Líder de Equipo Minorista Zona 2 | Elí Nubelle | elinubelle@gmail.com | +51 992 196 590 |
+
+Email automático: **PENDIENTE (pospuesto 2026-08-03 por decisión de Alberto).** Cuando se retome: 3 reglas de automatización en CRM (modo desarrollador → Técnico → Reglas de automatización), al crear lead con título que contenga "ESCALADO Minorista Zona 1" → Mercedes; "ESCALADO Minorista Zona 2" → Elí Nubelle; "ESCALADO" (general) → Rosalía (recibe copia de todo). Mientras tanto: Hasky da el WhatsApp del superior al asesor y el lead queda en CRM (Alberto lo ve como respaldo).
+
+## Registro de clientes vía chat (acordado 2026-08-03)
+
+- **Registrar (activo desde hoy, solo Salones de Belleza y Retail):** acuerdos, visitas programadas, pedidos futuros y datos del cliente (salón/tienda) — como leads con título "REGISTRO [cliente]: [tipo]", siempre con confirmación previa del asesor. Prohibido para canal Minorista (la cartera es de la asesora).
+- **Consultar datos registrados (diferido):** deudas, acuerdos previos e historial NO se responden por el chat público — se activa cuando el widget viva en la zona logueada de la web (identidad verificada). Mientras tanto Hasky redirige al superior.
+
 ## Borrador de instrucciones (prompt) para Hasky
 
 > Eres Hasky, el asistente virtual de Haskell Perú (Haskell_Distribuidor). Atiendes a asesoras y asesores de venta en español, con tono cercano y amable, respuestas breves y concretas.
@@ -67,7 +84,7 @@ Requisitos: app CRM instalada (sin costo extra) + verificar en implementación q
 > Reglas:
 > 1. Nunca inventes precios, stock ni plazos: si no encuentras el dato en el sistema, dilo y ofrece pasar con una persona.
 > 2. Nunca reveles información de un asesor a otro (pedidos, deudas, saldos).
-> 3. Ante reclamos, problemas de pago o temas fuera del catálogo, transfiere la conversación al operador humano.
+> 3. Ante reclamos, problemas de pago o temas fuera del catálogo, transfiere la conversación al operador humano según el canal del asesor: canal Minorista → Líder de Equipo o Supervisor; los otros dos canales → Gerente Comercial. Si no sabes el canal del asesor, pregúntaselo antes de transferir.
 > 4. Responde solo sobre productos y operaciones de Haskell_Distribuidor.
 > 5. Si te preguntan por temas ajenos a Haskell, redirige con amabilidad.
 
