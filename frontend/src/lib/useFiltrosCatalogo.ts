@@ -26,6 +26,28 @@ function esPackDe(p: ProductoFiltrable): boolean {
   return p.esPack ?? (p.packComponentes ? p.packComponentes.length > 0 : false);
 }
 
+// Minusculas y sin tildes, para que buscar "champu" encuentre "Champú" y
+// viceversa sin importar como lo haya escrito cada uno. Rango \u0300-\u036f
+// son las marcas diacriticas combinables que deja "champú".normalize('NFD').
+const MARCAS_DIACRITICAS = /[\u0300-\u036f]/g;
+
+function normalizar(s: string): string {
+  return s.normalize('NFD').replace(MARCAS_DIACRITICAS, '').toLowerCase();
+}
+
+// Sinonimos comerciales reales del rubro — la misma palabra tiene mas de un
+// nombre valido (ej. "champú"/"shampoo") y buscar uno debe encontrar el otro.
+const GRUPOS_SINONIMOS: string[][] = [['champu', 'shampoo']];
+
+function coincideTexto(textoNormalizado: string, terminoNormalizado: string): boolean {
+  if (textoNormalizado.includes(terminoNormalizado)) return true;
+  for (const grupo of GRUPOS_SINONIMOS) {
+    const terminoUsaEsteGrupo = grupo.some((palabra) => terminoNormalizado.includes(palabra));
+    if (terminoUsaEsteGrupo && grupo.some((palabra) => textoNormalizado.includes(palabra))) return true;
+  }
+  return false;
+}
+
 function opcionesDe<T extends ProductoFiltrable>(productos: T[], campo: 'categoria' | 'subcategoria' | 'tipo') {
   const set = new Set(productos.map((p) => p[campo] ?? 'Otros'));
   return [TODAS, ...Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))];
@@ -64,15 +86,27 @@ export function useFiltrosCatalogo<T extends ProductoFiltrable>(productos: T[]) 
   }, [tipos, tipo]);
 
   const filtrados = useMemo(() => {
-    const termino = busqueda.trim().toLowerCase();
-    return productos.filter((p) => {
+    const termino = normalizar(busqueda.trim());
+    const resultado = productos.filter((p) => {
       const coincideCategoria = categoria === TODAS || (p.categoria ?? 'Otros') === categoria;
       const coincideSubcategoria = subcategoria === TODAS || (p.subcategoria ?? 'Otros') === subcategoria;
       const coincideTipo = tipo === TODAS || (p.tipo ?? 'Otros') === tipo;
       const coincideTipoProducto = tipoProducto === 'todos' || (tipoProducto === 'pack') === esPackDe(p);
       const coincideBusqueda =
-        !termino || (p.nombre ?? '').toLowerCase().includes(termino) || p.sku.toLowerCase().includes(termino);
+        !termino ||
+        coincideTexto(normalizar(p.nombre ?? ''), termino) ||
+        coincideTexto(normalizar(p.sku), termino);
       return coincideCategoria && coincideSubcategoria && coincideTipo && coincideTipoProducto && coincideBusqueda;
+    });
+
+    // Si escribiste un código, la coincidencia exacta de SKU va primero —
+    // sin esto, un código que también aparece como substring de otro nombre
+    // podía terminar más abajo en la lista.
+    if (!termino) return resultado;
+    return [...resultado].sort((a, b) => {
+      const aExacto = normalizar(a.sku) === termino ? 0 : 1;
+      const bExacto = normalizar(b.sku) === termino ? 0 : 1;
+      return aExacto - bExacto;
     });
   }, [productos, busqueda, categoria, subcategoria, tipo, tipoProducto]);
 
