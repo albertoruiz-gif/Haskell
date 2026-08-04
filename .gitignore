@@ -16,6 +16,8 @@ dist/
 *.pfx
 *.cer
 *.crt
+Clave_Sunat.txt
+temp-*.txt
 
 # Archivos subidos en desarrollo (fotos de producto, etc.)
 backend/uploads/
