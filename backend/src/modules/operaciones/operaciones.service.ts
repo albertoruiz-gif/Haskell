@@ -5,6 +5,7 @@ import { OdooClient } from '../odoo/odoo.client';
 import { InventarioService } from '../inventario/inventario.service';
 import { formatearNumeroPedido } from '../../common/numero-pedido.util';
 import { calcularEstadoSaludEntrega, calcularFechaEntregaPrometida } from '../../common/sla.util';
+import { ESTADO_PEDIDO_LABEL } from '../../common/estados-pedido.util';
 
 /**
  * Picking/packing/despacho/entrega — pantalla "Almacén" del mockup.
@@ -23,12 +24,15 @@ export class OperacionesService {
   ) {}
 
   /**
-   * Espejo de solo lectura del estado de Delivery en Odoo (stock.picking) —
-   * ver catalogo-haskell/PROMPT_sync_delivery_a_odoo.md. Best-effort: si
-   * Odoo falla, el cambio de estado en la plataforma igual queda hecho (la
-   * plataforma sigue siendo la fuente de verdad), solo se registra en el log.
+   * Espejo de solo lectura del estado del pedido en Odoo (stock.picking) —
+   * ver catalogo-haskell/PROMPT_sync_delivery_a_odoo.md y
+   * PROMPT_investigar_estados_pago.md (incluye x_estado_pedido, que usa la
+   * AI Tool "Consultar estado de pedido" de Hasky/Live Chat, no solo el
+   * tramo de delivery). Best-effort: si Odoo falla, el cambio de estado en
+   * la plataforma igual queda hecho (la plataforma sigue siendo la fuente
+   * de verdad), solo se registra en el log.
    */
-  private async sincronizarDeliveryAOdoo(orderId: string) {
+  async sincronizarEstadoPedidoAOdoo(orderId: string) {
     try {
       const order = await this.prisma.order.findUniqueOrThrow({
         where: { id: orderId },
@@ -63,9 +67,10 @@ export class OperacionesService {
           entregaEstado: order.entrega?.estado ?? null,
           entregaUpdatedAt: order.entrega?.updatedAt ?? null,
         }),
+        estadoPedido: ESTADO_PEDIDO_LABEL[order.estado],
       });
     } catch (e) {
-      this.logger.warn(`No se pudo sincronizar delivery a Odoo para pedido ${orderId}: ${e instanceof Error ? e.message : e}`);
+      this.logger.warn(`No se pudo sincronizar el estado del pedido a Odoo para pedido ${orderId}: ${e instanceof Error ? e.message : e}`);
     }
   }
 
@@ -108,7 +113,9 @@ export class OperacionesService {
       },
     });
 
-    return this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PICKING } });
+    const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PICKING } });
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
+    return actualizado;
   }
 
   // RF-026: genera packing — requiere picking sin diferencias abiertas.
@@ -119,7 +126,9 @@ export class OperacionesService {
     if (order.estado !== EstadoPedido.PICKING) {
       throw new BadRequestException('Completá el picking antes de empacar.');
     }
-    return this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PACKING } });
+    const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PACKING } });
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
+    return actualizado;
   }
 
   // RF-027: asigna transportista y registra bultos antes de la aceptación
@@ -129,7 +138,7 @@ export class OperacionesService {
       create: { orderId, transportistaId, bultos, estado: EstadoEntrega.ASIGNADO },
       update: { transportistaId, bultos, estado: EstadoEntrega.ASIGNADO },
     });
-    await this.sincronizarDeliveryAOdoo(orderId);
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
     return entrega;
   }
 
@@ -148,7 +157,7 @@ export class OperacionesService {
       where: { orderId },
       data: { estado: EstadoEntrega.ACEPTADO, aceptadoEn: new Date() },
     });
-    await this.sincronizarDeliveryAOdoo(orderId);
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizada;
   }
 
@@ -160,7 +169,7 @@ export class OperacionesService {
     }
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.EN_RUTA } });
     const actualizada = await this.prisma.entrega.update({ where: { orderId }, data: { estado: EstadoEntrega.EN_RUTA } });
-    await this.sincronizarDeliveryAOdoo(orderId);
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizada;
   }
 
@@ -179,7 +188,7 @@ export class OperacionesService {
       where: { orderId },
       data: { estado: EstadoEntrega.ENTREGADO, montoPago: entregaActual.transportista.tarifaPorEntrega, ...data },
     });
-    await this.sincronizarDeliveryAOdoo(orderId);
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizada;
   }
 
@@ -211,7 +220,7 @@ export class OperacionesService {
       where: { orderId },
       data: { estado: EstadoEntrega.FALLIDO, motivoFallo: motivo, observaciones },
     });
-    await this.sincronizarDeliveryAOdoo(orderId);
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizada;
   }
 }

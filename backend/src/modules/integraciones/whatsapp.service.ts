@@ -1,21 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { EstadoPedido } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
-
-const ESTADOS_ES: Record<EstadoPedido, string> = {
-  BORRADOR: 'Borrador (aún no confirmado)',
-  PENDIENTE_PAGO: 'Pendiente de pago',
-  PAGADO: 'Pago confirmado',
-  STOCK_RESERVADO: 'Stock reservado, preparando tu pedido',
-  PICKING: 'En preparación (picking)',
-  PACKING: 'En empaque',
-  ENTREGADO_TRANSPORTISTA: 'Entregado al transportista',
-  EN_RUTA: 'En camino a tu dirección',
-  ENTREGADO: 'Entregado',
-  ENTREGA_FALLIDA: 'Intento de entrega fallido',
-  CANCELADO_DEVUELTO: 'Cancelado / devuelto',
-  ANULADO_POR_VENCIMIENTO: 'Anulado — venció el plazo de pago',
-};
+import { ESTADO_PEDIDO_LABEL } from '../../common/estados-pedido.util';
 
 /** Peru: celulares son 9 digitos. Comparamos por los ultimos 9 digitos para
  * tolerar formatos distintos (+51987654321, 987654321, 51 987 654 321, etc.). */
@@ -67,7 +52,7 @@ export class WhatsappIntegracionService {
       encontrado: true as const,
       referenciaWeb: pedido.referenciaWeb,
       estado: pedido.estado,
-      estadoEs: ESTADOS_ES[pedido.estado],
+      estadoEs: ESTADO_PEDIDO_LABEL[pedido.estado],
       totalCulqi: Number(pedido.totalCulqi),
       creadoEn: pedido.createdAt,
       pagadoEn: pedido.pagadoEn,

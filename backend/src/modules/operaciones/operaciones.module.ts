@@ -8,5 +8,6 @@ import { InventarioModule } from '../inventario/inventario.module';
   imports: [OdooModule, InventarioModule],
   controllers: [OperacionesController],
   providers: [OperacionesService],
+  exports: [OperacionesService],
 })
 export class OperacionesModule {}

@@ -295,10 +295,13 @@ export class OdooClient {
   }
 
   /**
-   * Web -> Odoo: espejo de solo lectura del estado de Delivery de un pedido
-   * en un stock.picking (crea si no existe, actualiza si ya existe —
-   * matcheando por x_pedido_externo_id, el numero de pedido legible
-   * HSK_CANAL_NNNNNN). La plataforma sigue siendo la fuente de verdad.
+   * Web -> Odoo: espejo de solo lectura del estado de un pedido en un
+   * stock.picking (crea si no existe, actualiza si ya existe — matcheando
+   * por x_pedido_externo_id, el numero de pedido legible HSK_CANAL_NNNNNN).
+   * La plataforma sigue siendo la fuente de verdad. `estadoPedido` es la
+   * etiqueta en español del EstadoPedido completo (no solo el tramo de
+   * delivery) — la usa la AI Tool "Consultar estado de pedido" de Hasky,
+   * ver catalogo-haskell/PROMPT_investigar_estados_pago.md.
    */
   async sincronizarDeliveryAOdoo(params: {
     pedidoExternoId: string;
@@ -311,6 +314,7 @@ export class OdooClient {
     recibidoDni?: string | null;
     devueltoCausa?: string | null;
     estadoDelivery?: string | null;
+    estadoPedido?: string | null;
   }): Promise<number> {
     const values: Record<string, unknown> = {
       x_transportista_id: params.transportistaPartnerId ?? false,
@@ -319,6 +323,7 @@ export class OdooClient {
       x_recibido_dni: params.recibidoDni ?? false,
       x_devuelto_causa: params.devueltoCausa ?? false,
       x_estado_delivery: params.estadoDelivery ?? false,
+      x_estado_pedido: params.estadoPedido ?? false,
     };
     if (params.scheduledDate) values.scheduled_date = params.scheduledDate.toISOString().slice(0, 19).replace('T', ' ');
     if (params.dateDone) values.date_done = params.dateDone.toISOString().slice(0, 19).replace('T', ' ');

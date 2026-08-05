@@ -5,6 +5,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { OdooClient } from '../odoo/odoo.client';
 import { InventarioService } from '../inventario/inventario.service';
+import { OperacionesService } from '../operaciones/operaciones.service';
 import { calcularFechaEntregaPrometida } from '../../common/sla.util';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class OrdersService {
     private readonly campaigns: CampaignsService,
     private readonly odoo: OdooClient,
     private readonly inventario: InventarioService,
+    private readonly operaciones: OperacionesService,
   ) {}
 
   /** Reserva stock real (FEFO) para el pedido recién creado — si falta stock, el pedido queda cancelado y se rechaza. */
@@ -231,6 +233,7 @@ export class OrdersService {
     // confirmarPagoYEnviarAOdoo aca en vez de solo marcar PAGADO.
     const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PAGADO, pagadoEn: new Date() } });
     await this.inventario.comprometerParaOrder(orderId);
+    await this.operaciones.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizado;
   }
 
@@ -240,6 +243,7 @@ export class OrdersService {
     });
     const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.CANCELADO_DEVUELTO } });
     await this.inventario.liberarParaOrder(orderId);
+    await this.operaciones.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizado;
   }
 
