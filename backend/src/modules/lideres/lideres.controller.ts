@@ -45,4 +45,15 @@ export class LideresController {
     }
     return this.lideres.comisionGanada(id);
   }
+
+  // Vista "Mi equipo": ranking de asesores + comisión de cada uno + total
+  // y comisión del líder. Mismo criterio de acceso que /comision.
+  @Get(':id/equipo')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'LIDER_MINORISTA')
+  resumenEquipo(@Param('id') id: string, @Req() req: any) {
+    if (req.user.rol === 'LIDER_MINORISTA' && req.user.liderId !== id) {
+      throw new ForbiddenException('Solo podés ver el resumen de tu propio equipo.');
+    }
+    return this.lideres.resumenEquipo(id);
+  }
 }

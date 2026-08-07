@@ -79,4 +79,59 @@ export class LideresService {
       cantidadAsesores: asesorIds.length,
     };
   }
+
+  /**
+   * Vista "Mi equipo" del Líder (RF pedido por Alberto 2026-08-06): ranking
+   * de sus asesores por venta, la comisión que cada uno se queda (PVP -
+   * precio con descuento del asesor, el margen que ya existe en cada
+   * OrderItem — no es un campo nuevo) y el total/comisión del equipo
+   * completo (mismo cálculo que comisionGanada, reusado acá para no
+   * duplicar la regla de negocio en dos lugares).
+   */
+  async resumenEquipo(id: string) {
+    const [resumenLider, asesores] = await Promise.all([
+      this.comisionGanada(id),
+      this.prisma.asesor.findMany({
+        where: { liderId: id },
+        select: { id: true, codigo: true, user: { select: { nombre: true } } },
+      }),
+    ]);
+
+    if (asesores.length === 0) {
+      return { ...resumenLider, asesores: [] };
+    }
+
+    const pedidosPorAsesor = await this.prisma.order.findMany({
+      where: { asesorId: { in: asesores.map((a) => a.id) }, pagadoEn: { not: null }, estado: { not: 'CANCELADO_DEVUELTO' } },
+      include: { items: true },
+    });
+
+    const ranking = asesores
+      .map((a) => {
+        const pedidos = pedidosPorAsesor.filter((p) => p.asesorId === a.id);
+        const totalVentaPvp = pedidos.reduce(
+          (acc, p) => acc + p.items.reduce((s, i) => s + Number(i.pvpUnitario) * i.cantidad, 0),
+          0,
+        );
+        // La comisión del asesor es su propio margen (PVP - precio con
+        // descuento que ya paga a la empresa), no un % nuevo — ver
+        // OrderItem.pvpUnitario/precioAsesorUnitario.
+        const comisionAsesor = pedidos.reduce(
+          (acc, p) =>
+            acc + p.items.reduce((s, i) => s + (Number(i.pvpUnitario) - Number(i.precioAsesorUnitario)) * i.cantidad, 0),
+          0,
+        );
+        return {
+          asesorId: a.id,
+          codigo: a.codigo,
+          nombre: a.user.nombre,
+          totalVentaPvp: Math.round(totalVentaPvp * 100) / 100,
+          comisionAsesor: Math.round(comisionAsesor * 100) / 100,
+          cantidadPedidos: pedidos.length,
+        };
+      })
+      .sort((a, b) => b.totalVentaPvp - a.totalVentaPvp);
+
+    return { ...resumenLider, asesores: ranking };
+  }
 }

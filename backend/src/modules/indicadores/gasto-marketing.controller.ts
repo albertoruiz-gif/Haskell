@@ -17,7 +17,7 @@ export class GastoMarketingController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS')
+  @Roles('ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL', 'FINANZAS')
   listar(@Query('desde') desde?: string, @Query('hasta') hasta?: string) {
     return this.prisma.gastoMarketing.findMany({
       where: {
@@ -29,7 +29,7 @@ export class GastoMarketingController {
   }
 
   @Post()
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
+  @Roles('ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL')
   crear(@Body() dto: CrearGastoMarketingDto, @Req() req: any) {
     return this.prisma.gastoMarketing.create({
       data: {

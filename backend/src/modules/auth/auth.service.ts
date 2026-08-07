@@ -61,7 +61,9 @@ export class AuthService {
 
     return {
       accessToken: this.jwt.sign(payload, { expiresIn: '8h' }), // RNF-007: expiracion por politica
-      usuario: { id: user.id, nombre: user.nombre, rol: user.rol, canal: payload.canal },
+      // liderId expuesto para que el frontend arme la URL de "Mi equipo"
+      // (GET /lideres/:id/equipo) sin tener que decodificar el JWT a mano.
+      usuario: { id: user.id, nombre: user.nombre, rol: user.rol, canal: payload.canal, liderId: payload.liderId },
     };
   }
 

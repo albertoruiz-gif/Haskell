@@ -18,6 +18,11 @@ enum Canal {
 
 enum RolUsuario {
   ADMINISTRADOR
+  // Acceso total al tablero de indicadores gerenciales, igual que
+  // ADMINISTRADOR/GERENTE_COMERCIAL (pedido de Alberto 2026-08-06) — no
+  // tiene todavia un modulo propio de gestion como GerenteComercial/Lider,
+  // es puramente un rol de visibilidad hasta que se defina si necesita algo mas.
+  GERENTE_GENERAL
   GERENTE_COMERCIAL
   GESTOR_CATALOGO
   LIDER_MINORISTA

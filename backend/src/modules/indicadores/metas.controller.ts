@@ -20,7 +20,7 @@ export class MetasController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS')
+  @Roles('ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL', 'FINANZAS')
   listar(@Query('indicador') indicador?: string) {
     return this.prisma.metaIndicador.findMany({
       where: {
@@ -32,7 +32,7 @@ export class MetasController {
   }
 
   @Post()
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
+  @Roles('ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL')
   async crear(@Body() dto: CrearMetaDto, @Req() req: any) {
     // Solo una meta vigente a la vez por par indicador+canal: cierra la
     // anterior (si existe) antes de crear la nueva, en vez de pisarla, para
@@ -54,7 +54,7 @@ export class MetasController {
   }
 
   @Patch(':id')
-  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
+  @Roles('ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL')
   actualizar(@Param('id') id: string, @Body() dto: ActualizarMetaDto, @Req() req: any) {
     return this.prisma.metaIndicador.update({
       where: { id },

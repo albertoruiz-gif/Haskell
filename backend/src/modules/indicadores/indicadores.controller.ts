@@ -5,14 +5,16 @@ import { IndicadoresService } from './indicadores.service';
 
 /**
  * Lectura del tablero gerencial — mismos 4 grupos del diseño acordado
- * (Gerencial, Comercial, Finanzas, Operaciones). Acceso: Administrador,
- * Gerente Comercial y Finanzas (confirmado con Alberto 2026-08-05). La
- * escritura de metas vive aparte en MetasController con permisos más
- * acotados (Administrador y Gerente Comercial).
+ * (Gerencial, Comercial, Finanzas, Operaciones). Acceso total: Administrador,
+ * Gerente General, Gerente Comercial y Finanzas (confirmado con Alberto
+ * 2026-08-06). Los Líderes de equipo (LIDER_MINORISTA) NO ven este tablero —
+ * tienen su propia vista acotada a su equipo, ver LideresController.
+ * La escritura de metas vive aparte en MetasController con permisos más
+ * acotados (Administrador, Gerente General y Gerente Comercial).
  */
 @Controller('indicadores')
 @UseGuards(RolesGuard)
-@Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS')
+@Roles('ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL', 'FINANZAS')
 export class IndicadoresController {
   constructor(private readonly indicadores: IndicadoresService) {}
 
