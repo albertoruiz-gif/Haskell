@@ -24,13 +24,13 @@ export class PremiosController {
   @Post('niveles')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
   crear(@Body() dto: CrearNivelDto, @Req() req: any) {
-    return this.premios.crearNivel(req.user.sub, dto);
+    return this.premios.crearNivel(req.user.id, dto);
   }
 
   @Patch('niveles/:id')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
   actualizar(@Param('id') id: string, @Body() dto: ActualizarNivelDto, @Req() req: any) {
-    return this.premios.actualizarNivel(id, req.user.sub, dto);
+    return this.premios.actualizarNivel(id, req.user.id, dto);
   }
 
   @Delete('niveles/:id')
