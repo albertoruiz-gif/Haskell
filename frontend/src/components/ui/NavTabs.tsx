@@ -10,6 +10,7 @@ import { Logo } from './Logo';
 const TABS = [
   { href: '/catalogo', label: 'Catálogo' },
   { href: '/carrito', label: 'Carrito' },
+  { href: '/mis-ventas', label: 'Mis Ventas' },
   { href: '/gestion', label: 'Gestión' },
   { href: '/almacen', label: 'Almacén' },
   { href: '/delivery', label: 'Delivery' },
@@ -23,8 +24,8 @@ const TABS = [
 // pestaña extra (además de Cerrar sesión), en vez de mostrar las cinco por
 // las dudas.
 const TABS_POR_ROL: Record<string, string[]> = {
-  ASESOR: ['/catalogo', '/carrito'],
-  VENDEDOR: ['/catalogo', '/carrito'],
+  ASESOR: ['/catalogo', '/carrito', '/mis-ventas'],
+  VENDEDOR: ['/catalogo', '/carrito', '/mis-ventas'],
   // Los Líderes tienen su propia pestaña acotada a su equipo, no el
   // tablero gerencial completo (ver docs/PROMPT_dashboard_indicadores_frontend.md sección 5).
   LIDER_MINORISTA: ['/gestion', '/mi-equipo'],

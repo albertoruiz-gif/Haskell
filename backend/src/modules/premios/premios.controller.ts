@@ -59,6 +59,14 @@ export class PremiosController {
     return this.premios.historialPremios(req.user.asesorId);
   }
 
+  // "Mis Ventas" — comisión semana/mes/total + historial de pedidos, ver
+  // PremiosService.historialVentas.
+  @Get('mi-historial-ventas')
+  @Roles('ASESOR')
+  miHistorialVentas(@Req() req: any) {
+    return this.premios.historialVentas(req.user.asesorId);
+  }
+
   // --- Vista del Líder/Gerente/Admin sobre un asesor puntual (drill-down desde Mi equipo) ---
 
   @Get('asesor/:asesorId/serie')

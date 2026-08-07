@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { IndicadoresService } from './indicadores.service';
@@ -55,5 +55,29 @@ export class IndicadoresController {
   @Get('serie')
   serie(@Query('indicador') indicador: string, @Query('periodo') periodo: string, @Query('cantidad') cantidad?: string) {
     return this.indicadores.serieHistorica(indicador, periodo, cantidad ? parseInt(cantidad, 10) : 12);
+  }
+
+  // Pie de productos/categorías más vendidos, mes actual — gerencial (todo
+  // el negocio o un canal). Click en una porción de "categoria" pide de
+  // nuevo con nivel=producto&categoria=X para el drill-down (RF 2026-08-07).
+  @Get('productos-top')
+  productosTop(@Query('canal') canal?: string, @Query('nivel') nivel?: string, @Query('categoria') categoria?: string) {
+    const { desde, hasta } = this.indicadores.rangoMesActualPublico();
+    return this.indicadores.productosTop({ desde, hasta, canal: canal || null, nivel: nivel === 'producto' ? 'producto' : 'categoria', categoria: categoria || null });
+  }
+
+  // Misma gráfica, para "Mis Ventas" del propio asesor — fuerza su asesorId,
+  // ignora canal (usa siempre el suyo vía asesorId).
+  @Get('mis-productos-top')
+  @Roles('ASESOR')
+  misProductosTop(@Req() req: any, @Query('nivel') nivel?: string, @Query('categoria') categoria?: string) {
+    const { desde, hasta } = this.indicadores.rangoMesActualPublico();
+    return this.indicadores.productosTop({
+      desde,
+      hasta,
+      asesorId: req.user.asesorId,
+      nivel: nivel === 'producto' ? 'producto' : 'categoria',
+      categoria: categoria || null,
+    });
   }
 }

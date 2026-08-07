@@ -120,6 +120,62 @@ export class PremiosService {
     return { canal: asesor.canal, puntos };
   }
 
+  /**
+   * "Mis Ventas" (RF 2026-08-07, pantalla separada del Carrito para no
+   * mezclar checkout con reporte personal): comisión semana/mes/total
+   * acumulada + historial mes a mes con cada pedido y su comisión propia
+   * (PVP - precio con descuento que paga a la empresa, igual que usa
+   * LideresService para el ranking del Líder, pero acá sobre uno mismo).
+   */
+  async historialVentas(asesorId: string) {
+    const asesor = await this.prisma.asesor.findUniqueOrThrow({ where: { id: asesorId } });
+    const { desde: desdeSemana } = this.rangoSemanaActual();
+    const { desde: desdeMes, hasta: ahora } = this.rangoMesActual();
+
+    const pedidos = await this.prisma.order.findMany({
+      where: { asesorId, pagadoEn: { not: null }, estado: { not: 'CANCELADO_DEVUELTO' } },
+      include: { items: true },
+      orderBy: { pagadoEn: 'desc' },
+    });
+
+    const comisionPedido = (p: (typeof pedidos)[number]) =>
+      p.items.reduce((s, i) => s + (Number(i.pvpUnitario) - Number(i.precioAsesorUnitario)) * i.cantidad, 0);
+    const montoPedido = (p: (typeof pedidos)[number]) => p.items.reduce((s, i) => s + Number(i.pvpUnitario) * i.cantidad, 0);
+
+    const comisionSemana = pedidos.filter((p) => p.pagadoEn! >= desdeSemana).reduce((a, p) => a + comisionPedido(p), 0);
+    const comisionMes = pedidos.filter((p) => p.pagadoEn! >= desdeMes).reduce((a, p) => a + comisionPedido(p), 0);
+    const comisionTotal = pedidos.reduce((a, p) => a + comisionPedido(p), 0);
+
+    const meses = new Map<string, { etiqueta: string; totalVenta: number; comisionMes: number; pedidos: unknown[] }>();
+    for (const p of pedidos) {
+      const fecha = p.pagadoEn!;
+      const clave = `${fecha.getFullYear()}-${fecha.getMonth()}`;
+      const etiqueta = `${MESES_ABREV[fecha.getMonth()]} ${fecha.getFullYear()}`;
+      if (!meses.has(clave)) meses.set(clave, { etiqueta, totalVenta: 0, comisionMes: 0, pedidos: [] });
+      const grupo = meses.get(clave)!;
+      const monto = montoPedido(p);
+      const comision = comisionPedido(p);
+      grupo.totalVenta += monto;
+      grupo.comisionMes += comision;
+      grupo.pedidos.push({
+        numero: p.numero,
+        canal: p.canal,
+        fecha: p.pagadoEn,
+        monto: Math.round(monto * 100) / 100,
+        comision: Math.round(comision * 100) / 100,
+        cantidadItems: p.items.reduce((s, i) => s + i.cantidad, 0),
+      });
+    }
+    const redondear2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      comisionSemana: redondear2(comisionSemana),
+      comisionMes: redondear2(comisionMes),
+      comisionTotal: redondear2(comisionTotal),
+      canal: asesor.canal,
+      meses: [...meses.values()].map((m) => ({ ...m, totalVenta: redondear2(m.totalVenta), comisionMes: redondear2(m.comisionMes) })),
+    };
+  }
+
   // --- helpers privados ---
 
   private rangoMesActual(): { desde: Date; hasta: Date } {

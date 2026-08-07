@@ -88,6 +88,60 @@ export class IndicadoresService {
   }
 
   /**
+   * Top de productos vendidos, en 2 niveles (categoria -> producto) para el
+   * pie chart con drill-down (RF 2026-08-07): gerencial (todo el negocio o
+   * un canal, sin asesorId) y del propio asesor en "Mis Ventas"
+   * (asesorId fijo, ignora canal — usa el propio del asesor). OrderItem no
+   * tiene FK a CatalogLine (guarda sku/nombre como snapshot al pagar), así
+   * que la categoría se resuelve haciendo match por sku contra el catálogo
+   * vigente — un sku descontinuado simplemente cae en "Sin categoría".
+   */
+  async productosTop(opts: {
+    desde: Date;
+    hasta: Date;
+    canal?: string | null;
+    asesorId?: string | null;
+    nivel: 'categoria' | 'producto';
+    categoria?: string | null;
+  }): Promise<{ clave: string; monto: number; cantidad: number }[]> {
+    const pedidos = await this.prisma.order.findMany({
+      where: {
+        pagadoEn: { gte: opts.desde, lte: opts.hasta },
+        estado: { not: 'CANCELADO_DEVUELTO' },
+        ...(opts.asesorId ? { asesorId: opts.asesorId } : {}),
+        ...(opts.canal ? { canal: opts.canal as never } : {}),
+      },
+      include: { items: true },
+    });
+    const items = pedidos.flatMap((p) => p.items);
+    if (items.length === 0) return [];
+
+    const skus = [...new Set(items.map((i) => i.sku))];
+    const lineas = await this.prisma.catalogLine.findMany({ where: { sku: { in: skus } }, select: { sku: true, categoria: true, nombre: true } });
+    const categoriaPorSku = new Map(lineas.map((l) => [l.sku, l.categoria]));
+    const nombrePorSku = new Map(lineas.map((l) => [l.sku, l.nombre]));
+
+    const agregados = new Map<string, { monto: number; cantidad: number }>();
+    for (const item of items) {
+      const categoria = categoriaPorSku.get(item.sku) ?? 'Sin categoría';
+      if (opts.nivel === 'categoria') {
+        this.acumular(agregados, categoria, Number(item.pvpUnitario) * item.cantidad, item.cantidad);
+      } else if (!opts.categoria || categoria === opts.categoria) {
+        const clave = nombrePorSku.get(item.sku) ?? item.nombre;
+        this.acumular(agregados, clave, Number(item.pvpUnitario) * item.cantidad, item.cantidad);
+      }
+    }
+    return [...agregados.entries()]
+      .map(([clave, v]) => ({ clave, monto: Math.round(v.monto * 100) / 100, cantidad: v.cantidad }))
+      .sort((a, b) => b.monto - a.monto);
+  }
+
+  private acumular(mapa: Map<string, { monto: number; cantidad: number }>, clave: string, monto: number, cantidad: number) {
+    const actual = mapa.get(clave) ?? { monto: 0, cantidad: 0 };
+    mapa.set(clave, { monto: actual.monto + monto, cantidad: actual.cantidad + cantidad });
+  }
+
+  /**
    * "Ventas por canal" (gráfica de composición de la pestaña Comercial) —
    * ventas_netas del mes actual para cada uno de los 3 canales reales.
    */
@@ -216,6 +270,10 @@ export class IndicadoresService {
     const diasTotales = conEntrega.reduce((acc, o) => acc + (o.entrega!.updatedAt.getTime() - o.pagadoEn!.getTime()) / (1000 * 60 * 60 * 24), 0);
 
     return { pctATiempo: (aTiempo / conEntrega.length) * 100, cicloDias: diasTotales / conEntrega.length };
+  }
+
+  rangoMesActualPublico(): { desde: Date; hasta: Date } {
+    return this.rangoMesActual();
   }
 
   private rangoMesActual(): { desde: Date; hasta: Date } {

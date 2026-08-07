@@ -14,6 +14,7 @@ import { ErrorBanner } from '../ui/ErrorBanner';
 import { IndicadorCard } from './IndicadorCard';
 import { DrillDownPanel } from './DrillDownPanel';
 import { GraficaComposicion, type DatoComposicion } from './GraficaComposicion';
+import { ProductosTopPie } from '../ui/ProductosTopPie';
 import { CANAL_LABEL, CANALES } from '../../lib/indicadores';
 import type { ValorIndicador } from '../../lib/indicadores';
 
@@ -71,6 +72,8 @@ export function ComercialTab() {
       </div>
 
       <GraficaComposicion titulo="Ventas por canal" datos={composicion} unidad="moneda" />
+
+      <ProductosTopPie endpoint="/indicadores/productos-top" titulo="Productos más vendidos (mes actual)" />
 
       {seleccionado && <DrillDownPanel dato={seleccionado} onClose={() => setSeleccionado(null)} />}
     </div>
