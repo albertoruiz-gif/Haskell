@@ -429,6 +429,51 @@ model PricingConfig {
   @@map("pricing_configs")
 }
 
+// Meta/objetivo por indicador del tablero gerencial (comercial/financiero/
+// operativo) — vive en esta plataforma y no en Odoo porque Odoo no tiene un
+// campo generico de objetivo que cubra ventas, margen, inventario y caja a
+// la vez; lo mas cercano (meta de facturacion del equipo en crm.team) solo
+// cubriria ventas. canal null = meta global del indicador; con canal = meta
+// especifica para ese canal (ej. margen bruto por canal). vigenciaHasta null
+// = sigue vigente hasta que se cargue una meta nueva para el mismo par
+// indicador/canal.
+model MetaIndicador {
+  id               String    @id @default(cuid())
+  indicador        String    // clave del indicador, ej. "ventas_netas", "margen_bruto_canal"
+  canal            Canal?
+  valorObjetivo    Decimal   @db.Decimal(12, 2)
+  vigenciaDesde    DateTime  @default(now())
+  vigenciaHasta    DateTime?
+  actualizadoPorId String
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([indicador, canal])
+  @@map("metas_indicadores")
+}
+
+// Gasto de marketing/publicidad por período — carga manual porque no hay
+// integración con plataformas de ads todavía. Es el numerador de CAC
+// (indicador "cac" en indicadores.constants.ts); mientras no exista esta
+// carga para un período, CAC queda en null. canal null = gasto general no
+// atribuible a un canal puntual (ej. campaña de marca).
+model GastoMarketing {
+  id               String    @id @default(cuid())
+  descripcion      String    // ej. "Meta Ads agosto 2026", "Google Ads lanzamiento"
+  canal            Canal?
+  monto            Decimal   @db.Decimal(12, 2)
+  periodoDesde     DateTime
+  periodoHasta     DateTime
+  registradoPorId  String
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([periodoDesde, periodoHasta])
+  @@map("gastos_marketing")
+}
+
 model Cart {
   id            String     @id @default(cuid())
   asesorId      String

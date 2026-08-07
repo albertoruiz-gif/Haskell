@@ -18,6 +18,7 @@ import { GerentesComercialesModule } from './modules/gerentes-comerciales/gerent
 import { TarifasModule } from './modules/tarifas/tarifas.module';
 import { IntegracionesModule } from './modules/integraciones/integraciones.module';
 import { CatalogosDigitalesModule } from './modules/catalogos-digitales/catalogos-digitales.module';
+import { IndicadoresModule } from './modules/indicadores/indicadores.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -43,6 +44,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     TarifasModule,
     IntegracionesModule,
     CatalogosDigitalesModule,
+    IndicadoresModule,
   ],
   controllers: [HealthController],
   providers: [
