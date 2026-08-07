@@ -458,6 +458,33 @@ model MetaIndicador {
   @@map("metas_indicadores")
 }
 
+// Escala de premios por venta mensual, por canal — RF pedido por Alberto
+// 2026-08-07 ("cuánto falta para el premio" en Carrito, configurado por el
+// Gerente Comercial en Gestión → Premios). Mismo patrón de versionado que
+// MetaIndicador (vigenciaDesde/vigenciaHasta): editar un nivel no lo
+// sobrescribe, cierra el vigente y crea uno nuevo, así los meses pasados
+// siguen mostrando la escala que realmente estaba activa entonces. El nivel
+// alcanzado en un mes es el de mayor montoMinimo <= venta PVP del asesor
+// ese mes (suma de OrderItem.pvpUnitario × cantidad, igual que
+// LideresService/IndicadoresService) — no hay paso de "entregado", es solo
+// informativo (decisión explícita del usuario).
+model PremioNivel {
+  id               String    @id @default(cuid())
+  canal            Canal
+  nombre           String
+  descripcion      String?
+  montoMinimo      Decimal   @db.Decimal(12, 2)
+  vigenciaDesde    DateTime  @default(now())
+  vigenciaHasta    DateTime?
+  actualizadoPorId String
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([canal, vigenciaDesde])
+  @@map("premios_niveles")
+}
+
 // Gasto de marketing/publicidad por período — carga manual porque no hay
 // integración con plataformas de ads todavía. Es el numerador de CAC
 // (indicador "cac" en indicadores.constants.ts); mientras no exista esta

@@ -13,6 +13,7 @@ import { CatalogoDigitalTab } from '../../components/admin/CatalogoDigitalTab';
 import { OfertasTab } from '../../components/admin/OfertasTab';
 import { PagosTab } from '../../components/admin/PagosTab';
 import { TransporteTab } from '../../components/admin/TransporteTab';
+import { PremiosTab } from '../../components/admin/PremiosTab';
 
 const TABS = [
   { id: 'pagos', label: 'Pagos' },
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'catalogo-digital', label: 'Revista Digital' },
   { id: 'ofertas', label: 'Ofertas y Packs' },
   { id: 'transporte', label: 'Transporte' },
+  { id: 'premios', label: 'Premios' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -110,6 +112,7 @@ export default function GestionPage() {
         <OfertasTab catalogoId={catalogoActivoId} onCambiarCatalogo={setCatalogoActivoId} onIrACatalogoPrecios={() => setTab('catalogo')} />
       )}
       {tab === 'transporte' && <TransporteTab />}
+      {tab === 'premios' && <PremiosTab />}
     </div>
   );
 }

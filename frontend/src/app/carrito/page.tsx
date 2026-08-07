@@ -14,6 +14,7 @@ import { apiFetch, ApiError } from '../../lib/api';
 import { formatearNumeroPedido } from '../../lib/numeroPedido';
 import { useCart } from '../../components/cart/CartContext';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
+import { ResumenPremios } from '../../components/premios/ResumenPremios';
 
 type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number };
 
@@ -141,6 +142,8 @@ export default function CarritoPage() {
         </div>
 
         <div className="space-y-3">
+          <ResumenPremios />
+
           <div className="rounded-card bg-white p-3 shadow-sm">
             <p className="text-sm font-medium text-bosque">Dirección de entrega</p>
             <p className="text-sm text-acento">Se usa tu dirección predeterminada registrada</p>

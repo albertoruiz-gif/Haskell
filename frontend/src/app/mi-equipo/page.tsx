@@ -7,10 +7,12 @@
 // depende de Odoo y todavía no calcula nada real; esto sí es 100% real
 // hoy, consume backend/src/modules/lideres/lideres.service.ts).
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch, ApiError } from '../../lib/api';
 import { getUsuario } from '../../lib/auth';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
+import { formatoSoles as formatoSolesPremios, type SeriePremio } from '../../lib/premios';
 
 type ResumenAsesor = {
   asesorId: string;
@@ -20,6 +22,9 @@ type ResumenAsesor = {
   totalVentaPvp: number;
   comisionAsesor: number;
   cantidadPedidos: number;
+  premioActual: string | null;
+  premioSiguiente: string | null;
+  faltantePremio: number | null;
 };
 
 type ResumenEquipo = {
@@ -39,6 +44,7 @@ export default function MiEquipoPage() {
   const [resumen, setResumen] = useState<ResumenEquipo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [asesorExpandido, setAsesorExpandido] = useState<string | null>(null);
 
   useEffect(() => {
     const usuario = getUsuario();
@@ -92,20 +98,48 @@ export default function MiEquipoPage() {
                       <th className="py-1 pr-2">Distrito</th>
                       <th className="py-1 pr-2 text-right">Vendido</th>
                       <th className="py-1 pr-2 text-right">Su comisión</th>
-                      <th className="py-1 text-right">Pedidos</th>
+                      <th className="py-1 pr-2 text-right">Pedidos</th>
+                      <th className="py-1 pr-2">Premio del mes</th>
+                      <th className="py-1"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {resumen.asesores.map((a, i) => (
-                      <tr key={a.asesorId} className="border-t border-musgo/10">
-                        <td className="py-1.5 pr-2 text-bosque/50">{i + 1}</td>
-                        <td className="py-1.5 pr-2 font-medium text-bosque">{a.nombre}</td>
-                        <td className="py-1.5 pr-2 text-bosque/60">{a.codigo}</td>
-                        <td className="py-1.5 pr-2 text-bosque/60">{a.distrito ?? '—'}</td>
-                        <td className="py-1.5 pr-2 text-right">{formatoSoles(a.totalVentaPvp)}</td>
-                        <td className="py-1.5 pr-2 text-right">{formatoSoles(a.comisionAsesor)}</td>
-                        <td className="py-1.5 text-right">{a.cantidadPedidos}</td>
-                      </tr>
+                      <Fragment key={a.asesorId}>
+                        <tr className="border-t border-musgo/10">
+                          <td className="py-1.5 pr-2 text-bosque/50">{i + 1}</td>
+                          <td className="py-1.5 pr-2 font-medium text-bosque">{a.nombre}</td>
+                          <td className="py-1.5 pr-2 text-bosque/60">{a.codigo}</td>
+                          <td className="py-1.5 pr-2 text-bosque/60">{a.distrito ?? '—'}</td>
+                          <td className="py-1.5 pr-2 text-right">{formatoSoles(a.totalVentaPvp)}</td>
+                          <td className="py-1.5 pr-2 text-right">{formatoSoles(a.comisionAsesor)}</td>
+                          <td className="py-1.5 pr-2 text-right">{a.cantidadPedidos}</td>
+                          <td className="py-1.5 pr-2 text-xs">
+                            {a.premioActual && <span className="font-medium text-acento">{a.premioActual}</span>}
+                            {a.premioSiguiente && (
+                              <span className="text-bosque/50">
+                                {a.premioActual ? ' · ' : ''}faltan {formatoSoles(a.faltantePremio ?? 0)} para {a.premioSiguiente}
+                              </span>
+                            )}
+                            {!a.premioActual && !a.premioSiguiente && <span className="text-bosque/40">Sin escala activa</span>}
+                          </td>
+                          <td className="py-1.5 text-right">
+                            <button
+                              onClick={() => setAsesorExpandido(asesorExpandido === a.asesorId ? null : a.asesorId)}
+                              className="text-xs text-acento underline"
+                            >
+                              {asesorExpandido === a.asesorId ? 'Ocultar' : 'Ver histórico'}
+                            </button>
+                          </td>
+                        </tr>
+                        {asesorExpandido === a.asesorId && (
+                          <tr className="border-t border-musgo/10 bg-crema/40">
+                            <td colSpan={9} className="p-2">
+                              <SerieMensualAsesor asesorId={a.asesorId} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -115,5 +149,39 @@ export default function MiEquipoPage() {
         </>
       )}
     </div>
+  );
+}
+
+// Histórico mensual de venta de un asesor puntual — drill-down desde la fila
+// del ranking. Mismo endpoint que usa el propio asesor en Carrito, visto
+// acá desde el lado del Líder (backend valida que sea de su equipo).
+function SerieMensualAsesor({ asesorId }: { asesorId: string }) {
+  const [serie, setSerie] = useState<SeriePremio | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSerie(null);
+    setError(null);
+    apiFetch<SeriePremio>(`/premios/asesor/${asesorId}/serie?meses=6`)
+      .then(setSerie)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'No se pudo cargar el histórico.'));
+  }, [asesorId]);
+
+  if (error) return <p className="text-xs text-bosque/50">{error}</p>;
+  if (!serie) return <p className="text-xs text-bosque/40">Cargando…</p>;
+
+  return (
+    <ResponsiveContainer width="100%" height={140}>
+      <BarChart data={serie.puntos} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#1F4A2E" strokeOpacity={0.08} />
+        <XAxis dataKey="etiqueta" tick={{ fontSize: 10, fill: '#1F4A2E' }} />
+        <YAxis tick={{ fontSize: 10, fill: '#1F4A2E' }} width={50} tickFormatter={(v: number) => `S/${v}`} />
+        <Tooltip
+          formatter={(valor: number) => formatoSolesPremios(valor)}
+          labelFormatter={(_, payload) => payload?.[0]?.payload?.nivelActual ?? ''}
+        />
+        <Bar dataKey="venta" name="Vendido" fill="#1F4A2E" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
   );
 }

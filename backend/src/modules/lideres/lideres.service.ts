@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../config/prisma.service';
+import { PremiosService } from '../premios/premios.service';
 
 /**
  * Líder/Supervisor de equipo (rol LIDER_MINORISTA) — afilia y tiene a
@@ -11,7 +12,10 @@ import { PrismaService } from '../../config/prisma.service';
  */
 @Injectable()
 export class LideresService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly premios: PremiosService,
+  ) {}
 
   async crear(data: { email: string; nombre: string; telefono: string; comisionPct?: number }) {
     const claveTemporal = Math.random().toString(36).slice(-10);
@@ -111,6 +115,13 @@ export class LideresService {
       include: { items: true },
     });
 
+    // Progreso de premio del mes (RF 2026-08-07) — se calcula aparte porque
+    // es async (consulta niveles vigentes por canal), a diferencia del resto
+    // del ranking que ya viene resuelto en memoria desde pedidosPorAsesor.
+    const premiosPorAsesor = new Map(
+      await Promise.all(asesores.map(async (a) => [a.id, await this.premios.resumenAsesor(a.id)] as const)),
+    );
+
     const ranking = asesores
       .map((a) => {
         const pedidos = pedidosPorAsesor.filter((p) => p.asesorId === a.id);
@@ -130,6 +141,7 @@ export class LideresService {
         // orden de despacho: la dirección marcada predeterminada, o la
         // primera si por algún motivo ninguna lo está.
         const direccion = a.direcciones.find((d) => d.predeterminada) ?? a.direcciones[0];
+        const premio = premiosPorAsesor.get(a.id);
         return {
           asesorId: a.id,
           codigo: a.codigo,
@@ -138,6 +150,9 @@ export class LideresService {
           totalVentaPvp: Math.round(totalVentaPvp * 100) / 100,
           comisionAsesor: Math.round(comisionAsesor * 100) / 100,
           cantidadPedidos: pedidos.length,
+          premioActual: premio?.nivelActual?.nombre ?? null,
+          premioSiguiente: premio?.nivelSiguiente?.nombre ?? null,
+          faltantePremio: premio?.faltante ?? null,
         };
       })
       .sort((a, b) => b.totalVentaPvp - a.totalVentaPvp);
