@@ -42,6 +42,16 @@ export function infoIndicador(indicador: string): IndicadorMeta {
   return INDICADORES_INFO[indicador] ?? { label: indicador, unidad: 'cantidad', menorEsMejor: false };
 }
 
+// Etiqueta corta de unidad — para que quien carga una meta en la pestaña
+// Metas sepa en qué escala escribir el número (ej. "80" vs "80.00" no es
+// lo mismo si es % o soles). Usado como sufijo del label y del input.
+export const UNIDAD_CORTA: Record<Unidad, string> = {
+  moneda: 'S/',
+  porcentaje: '%',
+  dias: 'días',
+  cantidad: 'unds',
+};
+
 export function formatearValor(valor: number | null, unidad: Unidad): string {
   if (valor === null) return 'Pendiente de cálculo';
   switch (unidad) {

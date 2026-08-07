@@ -14,6 +14,7 @@ import {
   CATEGORIAS_INDICADORES,
   INDICADORES_POR_CANAL,
   infoIndicador,
+  UNIDAD_CORTA,
   type MetaIndicador,
 } from '../../lib/indicadores';
 
@@ -32,6 +33,7 @@ function FilaMeta({
   puedeEditar: boolean;
   onGuardado: () => void;
 }) {
+  const unidad = UNIDAD_CORTA[infoIndicador(indicador).unidad];
   const [valor, setValor] = useState(metaExistente?.valorObjetivo ?? '');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,14 +65,17 @@ function FilaMeta({
       <td className="py-1.5 pr-2 text-bosque/70">{canal ? CANAL_LABEL[canal] ?? canal : 'Global'}</td>
       <td className="py-1.5 pr-2">
         {puedeEditar ? (
-          <input
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            placeholder="sin meta definida"
-            className="w-28 rounded-pill border border-musgo/30 px-2 py-1 text-sm"
-          />
+          <span className="inline-flex items-center gap-1">
+            <input
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              placeholder="sin meta definida"
+              className="w-28 rounded-pill border border-musgo/30 px-2 py-1 text-sm"
+            />
+            <span className="text-xs text-bosque/50">{unidad}</span>
+          </span>
         ) : (
-          <span>{metaExistente?.valorObjetivo ?? 'sin meta definida'}</span>
+          <span>{metaExistente ? `${metaExistente.valorObjetivo} ${unidad}` : 'sin meta definida'}</span>
         )}
       </td>
       <td className="py-1.5 pr-2 text-xs text-bosque/40">{metaExistente ? `#${metaExistente.actualizadoPorId.slice(0, 8)}` : '—'}</td>
@@ -134,7 +139,8 @@ export function MetasTab() {
                   <>
                     <tr key={indicador}>
                       <td colSpan={4} className="pt-3 pb-1 text-xs font-semibold text-bosque">
-                        {infoIndicador(indicador).label}
+                        {infoIndicador(indicador).label}{' '}
+                        <span className="font-normal text-bosque/40">({UNIDAD_CORTA[infoIndicador(indicador).unidad]})</span>
                       </td>
                     </tr>
                     {alcances.map((canal) => (

@@ -9,6 +9,7 @@ const PERIODOS = ['Día', 'Semana', 'Mes', 'Bimestre', 'Trimestre', 'Semestre', 
 
 type FilaSeguimiento = {
   id: string;
+  numeroSemana: string;
   problemaCausa: string;
   accionesCorrectivas: string;
   fechaSolucion: string;
@@ -24,7 +25,7 @@ function TablaSeguimiento() {
 
   function agregarFila() {
     setFilas((prev) => [
-      { id: crypto.randomUUID(), problemaCausa: '', accionesCorrectivas: '', fechaSolucion: '', responsable: '', estado: 'Pendiente' },
+      { id: crypto.randomUUID(), numeroSemana: '', problemaCausa: '', accionesCorrectivas: '', fechaSolucion: '', responsable: '', estado: 'Pendiente' },
       ...prev,
     ]);
   }
@@ -45,6 +46,7 @@ function TablaSeguimiento() {
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-crema">
             <tr className="text-left uppercase text-bosque/50">
+              <th className="p-2">N° Semana</th>
               <th className="p-2">Problema / causa</th>
               <th className="p-2">Acciones correctivas</th>
               <th className="p-2">Fecha de solución</th>
@@ -55,13 +57,23 @@ function TablaSeguimiento() {
           <tbody>
             {filas.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-3 text-center text-bosque/40">
+                <td colSpan={6} className="p-3 text-center text-bosque/40">
                   Sin filas todavía.
                 </td>
               </tr>
             )}
             {filas.map((f) => (
               <tr key={f.id} className="border-t border-musgo/10">
+                <td className="p-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={53}
+                    value={f.numeroSemana}
+                    onChange={(e) => actualizarFila(f.id, { numeroSemana: e.target.value })}
+                    className="w-14 rounded bg-transparent p-1 outline-none focus:bg-white"
+                  />
+                </td>
                 <td className="p-1">
                   <input
                     value={f.problemaCausa}
