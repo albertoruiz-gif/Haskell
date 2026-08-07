@@ -68,16 +68,10 @@ jobs:
       - if: matrix.app == 'backend'
         run: npm audit --omit=dev --audit-level=high
         working-directory: backend
-      # frontend: next@14.2.5 (dependencia de PRODUCCION directa) no tiene parche
-      # de seguridad dentro de su propia rama 14.x para varios advisories altos
-      # (los fixes reales son next@15.5.16 / 16.2.5, un major breaking que requiere
-      # migracion y pruebas completas de rutas/Server Actions — pendiente,
-      # ver docs/CI_MEJORAS_FUTURAS.md#0). Riesgo aceptado explicitamente por el
-      # usuario el 2026-08-07: se baja el umbral a critical para no bloquear el
-      # pipeline mientras se planifica esa migracion. glob (via eslint-config-next)
-      # es dev-only.
+      # frontend: migrado a next@15.5.23 (2026-08-07, ver docs/CI_MEJORAS_FUTURAS.md#0)
+      # -- ya no hace falta la excepcion a critical que tuvo este job.
       - if: matrix.app == 'frontend'
-        run: npm audit --omit=dev --audit-level=critical
+        run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
