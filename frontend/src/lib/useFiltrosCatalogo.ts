@@ -39,13 +39,33 @@ function normalizar(s: string): string {
 // nombre valido (ej. "champú"/"shampoo") y buscar uno debe encontrar el otro.
 const GRUPOS_SINONIMOS: string[][] = [['champu', 'shampoo']];
 
-function coincideTexto(textoNormalizado: string, terminoNormalizado: string): boolean {
-  if (textoNormalizado.includes(terminoNormalizado)) return true;
-  for (const grupo of GRUPOS_SINONIMOS) {
-    const terminoUsaEsteGrupo = grupo.some((palabra) => terminoNormalizado.includes(palabra));
-    if (terminoUsaEsteGrupo && grupo.some((palabra) => textoNormalizado.includes(palabra))) return true;
-  }
-  return false;
+function palabraCanonica(palabra: string): string {
+  const grupo = GRUPOS_SINONIMOS.find((g) => g.includes(palabra));
+  return grupo ? grupo[0] : palabra;
+}
+
+// Separa el termino de busqueda en palabras sueltas (ignora espacios,
+// parentesis y signos, pero NO el guion de un SKU como "hsk-0017") y exige
+// que TODAS esten presentes (en el nombre o en el SKU) sin importar el
+// orden. Necesario porque Hasky recomienda productos en Live Chat con el
+// formato "Nombre del producto (HSK-xxxx)" pensado para copiar y pegar acá
+// — con un simple "el texto incluye el termino completo" nunca matchea,
+// porque ni el nombre solo ni el SKU solo contienen esa cadena completa.
+// Antes de esto, ademas, bastaba con que la palabra "champu"/"shampoo"
+// apareciera en cualquier lado para dar por buena TODA la busqueda (bug:
+// pegar la recomendacion completa traia todos los champús, no solo el
+// recomendado).
+function tokenizar(terminoNormalizado: string): string[] {
+  return terminoNormalizado
+    .split(/[^a-z0-9ñ-]+/)
+    .filter(Boolean)
+    .map(palabraCanonica);
+}
+
+function coincideTexto(nombreNormalizado: string, skuNormalizado: string, terminoNormalizado: string): boolean {
+  const tokens = tokenizar(terminoNormalizado);
+  if (tokens.length === 0) return true;
+  return tokens.every((token) => nombreNormalizado.includes(token) || skuNormalizado.includes(token));
 }
 
 function opcionesDe<T extends ProductoFiltrable>(productos: T[], campo: 'categoria' | 'subcategoria' | 'tipo') {
@@ -92,10 +112,7 @@ export function useFiltrosCatalogo<T extends ProductoFiltrable>(productos: T[]) 
       const coincideSubcategoria = subcategoria === TODAS || (p.subcategoria ?? 'Otros') === subcategoria;
       const coincideTipo = tipo === TODAS || (p.tipo ?? 'Otros') === tipo;
       const coincideTipoProducto = tipoProducto === 'todos' || (tipoProducto === 'pack') === esPackDe(p);
-      const coincideBusqueda =
-        !termino ||
-        coincideTexto(normalizar(p.nombre ?? ''), termino) ||
-        coincideTexto(normalizar(p.sku), termino);
+      const coincideBusqueda = coincideTexto(normalizar(p.nombre ?? ''), normalizar(p.sku), termino);
       return coincideCategoria && coincideSubcategoria && coincideTipo && coincideTipoProducto && coincideBusqueda;
     });
 
