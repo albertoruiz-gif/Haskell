@@ -5,7 +5,7 @@ import { apiFetch, ApiError } from '../../lib/api';
 import { ErrorBanner } from '../ui/ErrorBanner';
 import { IndicadorCard } from './IndicadorCard';
 import { DrillDownPanel } from './DrillDownPanel';
-import { PendienteCalculo } from './PendienteCalculo';
+import { SerieHistoricaChart } from './SerieHistoricaChart';
 import { calcularEstado, ESTADO_COLOR, ESTADO_LABEL, infoIndicador } from '../../lib/indicadores';
 import type { ValorIndicador } from '../../lib/indicadores';
 
@@ -73,7 +73,7 @@ export function GerencialTab({ onIrAPestana }: { onIrAPestana: (id: 'comercial' 
 
           <div className="rounded-card bg-white p-4 shadow-sm">
             <p className="mb-2 text-sm font-medium text-bosque">Ventas netas vs meta — últimos 6 meses</p>
-            <PendienteCalculo mensaje="Sin serie histórica todavía" />
+            <SerieHistoricaChart indicador="ventas_netas" periodo="Mes" cantidad={6} />
           </div>
 
           <div>

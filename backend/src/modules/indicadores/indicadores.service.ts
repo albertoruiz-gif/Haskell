@@ -19,23 +19,43 @@ type ValorIndicador = {
   canal: string | null;
 };
 
+// Los 6 indicadores que hoy calculan de verdad (ver comentario de clase) —
+// son los únicos para los que tiene sentido pedir /indicadores/serie.
+const INDICADORES_CON_SERIE = [
+  'ventas_netas',
+  'ticket_promedio',
+  'venta_promedio_asesor_activo',
+  'cumplimiento_meta',
+  'pedidos_completos_a_tiempo',
+  'tiempo_ciclo_pedido',
+] as const;
+
+const PERIODOS_VALIDOS = ['dia', 'semana', 'mes', 'bimestre', 'trimestre', 'semestre', 'anio'] as const;
+type PeriodoId = (typeof PERIODOS_VALIDOS)[number];
+
+const DIAS_POR_PERIODO: Partial<Record<PeriodoId, number>> = { dia: 1, semana: 7 };
+const MESES_POR_PERIODO: Partial<Record<PeriodoId, number>> = { mes: 1, bimestre: 2, trimestre: 3, semestre: 6, anio: 12 };
+const MESES_ABREV = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+type Bucket = { desde: Date; hasta: Date; etiqueta: string };
+
 /**
  * Agrega, por pestaña del tablero gerencial, el valor actual de cada
  * indicador junto con su meta vigente (tabla MetaIndicador).
  *
  * Estado (2026-08-07): la parte de metas es real. De los 17 indicadores,
  * 6 ya calculan un valorActual real a partir de datos 100% propios (Order/
- * Entrega en Postgres, sin Odoo) — ventas_netas, ticket_promedio,
- * venta_promedio_asesor_activo, cumplimiento_meta, pedidos_completos_a_tiempo
- * y tiempo_ciclo_pedido. Los otros 11 dependen de datos que hoy solo viven
- * en Odoo (margen/costo/inventario contable) o de piezas que todavía no
- * existen (CAC, LTV — ver indicadores.constants.ts) y quedan en null a
- * propósito: preferible mostrar "pendiente de cálculo" que inventar una
- * fórmula sin validar contra la instancia real de Odoo.
+ * Entrega en Postgres, sin Odoo) — ver INDICADORES_CON_SERIE arriba. Los
+ * otros 11 dependen de datos que hoy solo viven en Odoo (margen/costo/
+ * inventario contable) o de piezas que todavía no existen (CAC, LTV — ver
+ * indicadores.constants.ts) y quedan en null a propósito: preferible
+ * mostrar "pendiente de cálculo" que inventar una fórmula sin validar
+ * contra la instancia real de Odoo.
  *
- * El período de cálculo es el mes calendario actual (1° del mes hasta
- * ahora) — todavía no hay endpoint de serie histórica por período (ver
- * docs/PROMPT_dashboard_indicadores_frontend.md sección 2/3).
+ * `comercial()`/`operaciones()` calculan el snapshot del mes calendario
+ * actual; `serieHistorica()` reusa el mismo cálculo por rango de fechas
+ * para armar la serie que consume el panel de detalle del frontend
+ * (selector de período + gráfica de línea con meta).
  */
 @Injectable()
 export class IndicadoresService {
@@ -52,22 +72,11 @@ export class IndicadoresService {
   async comercial(): Promise<ValorIndicador[]> {
     const { desde, hasta } = this.rangoMesActual();
     const metas = await this.metasVigentes(INDICADORES_COMERCIALES);
-    const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
-
-    const ventasNetas = this.sumarVentaPvp(pedidos);
-    const ticketPromedio = pedidos.length > 0 ? ventasNetas / pedidos.length : null;
-    const asesoresActivos = new Set(pedidos.map((p) => p.asesorId)).size;
-    const ventaPromedioAsesorActivo = asesoresActivos > 0 ? ventasNetas / asesoresActivos : null;
-    const metaVentasNetas = metas.get('ventas_netas')?.find((m) => m.canal === null)?.valor ?? null;
-    const cumplimientoMeta = metaVentasNetas ? (ventasNetas / metaVentasNetas) * 100 : null;
-
-    const valores: Partial<Record<IndicadorKey, number | null>> = {
-      ventas_netas: pedidos.length > 0 ? ventasNetas : null,
-      ticket_promedio: ticketPromedio,
-      venta_promedio_asesor_activo: ventaPromedioAsesorActivo,
-      cumplimiento_meta: cumplimientoMeta,
-    };
-
+    const claves = ['ventas_netas', 'ticket_promedio', 'venta_promedio_asesor_activo', 'cumplimiento_meta'] as const;
+    const valores: Partial<Record<IndicadorKey, number | null>> = {};
+    for (const indicador of claves) {
+      valores[indicador] = await this.valorEnRango(indicador, desde, hasta);
+    }
     return INDICADORES_COMERCIALES.map((indicador) => this.armarValor(indicador, metas, valores[indicador] ?? null));
   }
 
@@ -79,38 +88,10 @@ export class IndicadoresService {
   async operaciones(): Promise<ValorIndicador[]> {
     const { desde, hasta } = this.rangoMesActual();
     const metas = await this.metasVigentes(INDICADORES_OPERATIVOS);
-
-    const entregados = await this.prisma.order.findMany({
-      where: { estado: 'ENTREGADO', pagadoEn: { gte: desde, lte: hasta } },
-      include: { entrega: true },
-    });
-
-    let valorPedidosATiempo: number | null = null;
-    let valorTiempoCiclo: number | null = null;
-    const conEntrega = entregados.filter((o) => o.entrega && o.pagadoEn);
-    if (conEntrega.length > 0) {
-      const aTiempo = conEntrega.filter(
-        (o) =>
-          calcularEstadoSaludEntrega({
-            pagadoEn: o.pagadoEn,
-            entregaEstado: o.entrega!.estado,
-            entregaUpdatedAt: o.entrega!.updatedAt,
-          }) === 'A_TIEMPO',
-      ).length;
-      valorPedidosATiempo = (aTiempo / conEntrega.length) * 100;
-
-      const diasTotales = conEntrega.reduce((acc, o) => {
-        const dias = (o.entrega!.updatedAt.getTime() - o.pagadoEn!.getTime()) / (1000 * 60 * 60 * 24);
-        return acc + dias;
-      }, 0);
-      valorTiempoCiclo = diasTotales / conEntrega.length;
-    }
-
     const valores: Partial<Record<IndicadorKey, number | null>> = {
-      pedidos_completos_a_tiempo: valorPedidosATiempo,
-      tiempo_ciclo_pedido: valorTiempoCiclo,
+      pedidos_completos_a_tiempo: await this.valorEnRango('pedidos_completos_a_tiempo', desde, hasta),
+      tiempo_ciclo_pedido: await this.valorEnRango('tiempo_ciclo_pedido', desde, hasta),
     };
-
     return INDICADORES_OPERATIVOS.map((indicador) => this.armarValor(indicador, metas, valores[indicador] ?? null));
   }
 
@@ -127,6 +108,90 @@ export class IndicadoresService {
     return INDICADORES_MARKETING_DIGITAL.map((indicador) => this.armarValor(indicador, metas));
   }
 
+  /**
+   * Serie histórica de un indicador para el panel de detalle (drill-down)
+   * del frontend — selector Día/Semana/Mes/Bimestre/Trimestre/Semestre/Año.
+   * La meta de cada punto es la que estaba vigente AL FINAL de ese período
+   * (MetaIndicador.vigenciaDesde/vigenciaHasta), no la meta actual — así la
+   * línea de referencia refleja objetivos que cambiaron con el tiempo.
+   * Para los 11 indicadores que todavía no calculan nada real, devuelve la
+   * serie igual pero con valorActual null en todos los puntos (el frontend
+   * ya sabe mostrar "pendiente de cálculo" para eso).
+   */
+  async serieHistorica(indicadorCrudo: string, periodoCrudo: string, cantidadCruda: number) {
+    const periodo: PeriodoId = (PERIODOS_VALIDOS as readonly string[]).includes(periodoCrudo) ? (periodoCrudo as PeriodoId) : 'mes';
+    const cantidad = Math.min(Math.max(Math.trunc(cantidadCruda) || 12, 1), 36);
+    const buckets = this.generarBuckets(periodo, cantidad);
+    const esCalculable = (INDICADORES_CON_SERIE as readonly string[]).includes(indicadorCrudo);
+
+    const puntos = [];
+    for (const b of buckets) {
+      const valorActual = esCalculable ? await this.valorEnRango(indicadorCrudo as IndicadorKey, b.desde, b.hasta) : null;
+      const meta = await this.metaVigenteEn(indicadorCrudo, b.hasta);
+      puntos.push({
+        etiqueta: b.etiqueta,
+        valorActual: valorActual !== null ? Math.round(valorActual * 100) / 100 : null,
+        meta,
+      });
+    }
+    return { indicador: indicadorCrudo, periodo, puntos };
+  }
+
+  // --- Cálculo por rango de fechas, compartido entre el snapshot del mes
+  // actual (comercial/operaciones) y la serie histórica. ---
+
+  private async valorEnRango(indicador: IndicadorKey, desde: Date, hasta: Date): Promise<number | null> {
+    switch (indicador) {
+      case 'ventas_netas': {
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        return pedidos.length > 0 ? this.sumarVentaPvp(pedidos) : null;
+      }
+      case 'ticket_promedio': {
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        return pedidos.length > 0 ? this.sumarVentaPvp(pedidos) / pedidos.length : null;
+      }
+      case 'venta_promedio_asesor_activo': {
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        const asesoresActivos = new Set(pedidos.map((p) => p.asesorId)).size;
+        return asesoresActivos > 0 ? this.sumarVentaPvp(pedidos) / asesoresActivos : null;
+      }
+      case 'cumplimiento_meta': {
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        if (pedidos.length === 0) return null;
+        const metaVentas = await this.metaVigenteEn('ventas_netas', hasta);
+        return metaVentas ? (this.sumarVentaPvp(pedidos) / metaVentas) * 100 : null;
+      }
+      case 'pedidos_completos_a_tiempo':
+        return (await this.calcularOperativosEnRango(desde, hasta)).pctATiempo;
+      case 'tiempo_ciclo_pedido':
+        return (await this.calcularOperativosEnRango(desde, hasta)).cicloDias;
+      default:
+        return null;
+    }
+  }
+
+  private async calcularOperativosEnRango(desde: Date, hasta: Date): Promise<{ pctATiempo: number | null; cicloDias: number | null }> {
+    const entregados = await this.prisma.order.findMany({
+      where: { estado: 'ENTREGADO', pagadoEn: { gte: desde, lte: hasta } },
+      include: { entrega: true },
+    });
+    const conEntrega = entregados.filter((o) => o.entrega && o.pagadoEn);
+    if (conEntrega.length === 0) return { pctATiempo: null, cicloDias: null };
+
+    const aTiempo = conEntrega.filter(
+      (o) =>
+        calcularEstadoSaludEntrega({
+          pagadoEn: o.pagadoEn,
+          entregaEstado: o.entrega!.estado,
+          entregaUpdatedAt: o.entrega!.updatedAt,
+        }) === 'A_TIEMPO',
+    ).length;
+
+    const diasTotales = conEntrega.reduce((acc, o) => acc + (o.entrega!.updatedAt.getTime() - o.pagadoEn!.getTime()) / (1000 * 60 * 60 * 24), 0);
+
+    return { pctATiempo: (aTiempo / conEntrega.length) * 100, cicloDias: diasTotales / conEntrega.length };
+  }
+
   private rangoMesActual(): { desde: Date; hasta: Date } {
     const ahora = new Date();
     const desde = new Date(ahora.getFullYear(), ahora.getMonth(), 1, 0, 0, 0, 0);
@@ -141,10 +206,7 @@ export class IndicadoresService {
   }
 
   private sumarVentaPvp(pedidos: { items: { pvpUnitario: unknown; cantidad: number }[] }[]): number {
-    return pedidos.reduce(
-      (acc, p) => acc + p.items.reduce((s, i) => s + Number(i.pvpUnitario) * i.cantidad, 0),
-      0,
-    );
+    return pedidos.reduce((acc, p) => acc + p.items.reduce((s, i) => s + Number(i.pvpUnitario) * i.cantidad, 0), 0);
   }
 
   private async metasVigentes(indicadores: readonly string[]): Promise<Map<string, MetaVigente[]>> {
@@ -163,6 +225,23 @@ export class IndicadoresService {
     return porIndicador;
   }
 
+  // Meta global vigente en una fecha puntual (para la serie histórica) —
+  // a diferencia de metasVigentes() (vigente HOY), esta mira vigenciaDesde/
+  // vigenciaHasta contra la fecha pedida, así la línea de meta de un
+  // período viejo refleja el objetivo que regía en ese momento.
+  private async metaVigenteEn(indicador: string, fecha: Date): Promise<number | null> {
+    const meta = await this.prisma.metaIndicador.findFirst({
+      where: {
+        indicador,
+        canal: null,
+        vigenciaDesde: { lte: fecha },
+        OR: [{ vigenciaHasta: null }, { vigenciaHasta: { gte: fecha } }],
+      },
+      orderBy: { vigenciaDesde: 'desc' },
+    });
+    return meta ? Number(meta.valorObjetivo) : null;
+  }
+
   private armarValor(indicador: IndicadorKey, metas: Map<string, MetaVigente[]>, valorActual: number | null = null): ValorIndicador {
     const metaGlobal = metas.get(indicador)?.find((m) => m.canal === null);
     return {
@@ -171,5 +250,43 @@ export class IndicadoresService {
       meta: metaGlobal?.valor ?? null,
       canal: null,
     };
+  }
+
+  // --- Buckets de la serie histórica ---
+
+  private generarBuckets(periodo: PeriodoId, cantidad: number): Bucket[] {
+    const ahora = new Date();
+    const buckets: Bucket[] = [];
+
+    const dias = DIAS_POR_PERIODO[periodo];
+    if (dias) {
+      for (let i = cantidad - 1; i >= 0; i--) {
+        const hasta = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - dias * i, 23, 59, 59, 999);
+        const desde = new Date(hasta);
+        desde.setDate(desde.getDate() - dias + 1);
+        desde.setHours(0, 0, 0, 0);
+        buckets.push({ desde, hasta, etiqueta: this.etiquetaBucket(desde, hasta, periodo) });
+      }
+      return buckets;
+    }
+
+    const meses = MESES_POR_PERIODO[periodo] ?? 1;
+    for (let i = cantidad - 1; i >= 0; i--) {
+      const offsetFin = ahora.getMonth() - meses * i;
+      const desde = new Date(ahora.getFullYear(), offsetFin - meses + 1, 1, 0, 0, 0, 0);
+      const hasta = new Date(ahora.getFullYear(), offsetFin + 1, 0, 23, 59, 59, 999);
+      buckets.push({ desde, hasta, etiqueta: this.etiquetaBucket(desde, hasta, periodo) });
+    }
+    return buckets;
+  }
+
+  private etiquetaBucket(desde: Date, hasta: Date, periodo: PeriodoId): string {
+    if (periodo === 'dia') return `${hasta.getDate()} ${MESES_ABREV[hasta.getMonth()]}`;
+    if (periodo === 'semana') return `${desde.getDate()} ${MESES_ABREV[desde.getMonth()]} - ${hasta.getDate()} ${MESES_ABREV[hasta.getMonth()]}`;
+    if (periodo === 'anio') return `${hasta.getFullYear()}`;
+    if (desde.getMonth() === hasta.getMonth() && desde.getFullYear() === hasta.getFullYear()) {
+      return `${MESES_ABREV[hasta.getMonth()]} ${hasta.getFullYear()}`;
+    }
+    return `${MESES_ABREV[desde.getMonth()]}-${MESES_ABREV[hasta.getMonth()]} ${hasta.getFullYear()}`;
   }
 }

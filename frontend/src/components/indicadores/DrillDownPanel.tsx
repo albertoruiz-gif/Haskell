@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { calcularEstado, ESTADO_LABEL, ESTADO_TEXTO, formatearValor, infoIndicador } from '../../lib/indicadores';
 import type { ValorIndicador } from '../../lib/indicadores';
-import { PendienteCalculo } from './PendienteCalculo';
+import { SerieHistoricaChart } from './SerieHistoricaChart';
 
 const PERIODOS = ['Día', 'Semana', 'Mes', 'Bimestre', 'Trimestre', 'Semestre', 'Año'] as const;
 
@@ -162,11 +162,7 @@ export function DrillDownPanel({ dato, onClose }: { dato: ValorIndicador; onClos
           ))}
         </div>
 
-        {/* Serie histórica: hoy no existe ningún endpoint que devuelva la
-            serie por período (ver PROMPT_dashboard_indicadores_frontend.md) —
-            se deja el estado vacío en vez de inventar una gráfica con
-            números falsos. */}
-        <PendienteCalculo mensaje={`Sin serie histórica por ${periodo.toLowerCase()} todavía`} />
+        <SerieHistoricaChart indicador={dato.indicador} periodo={periodo} />
 
         <TablaSeguimiento />
       </div>

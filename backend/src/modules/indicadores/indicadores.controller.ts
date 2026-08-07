@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { IndicadoresService } from './indicadores.service';
@@ -41,5 +41,12 @@ export class IndicadoresController {
   @Get('marketing')
   marketing() {
     return this.indicadores.marketing();
+  }
+
+  // Serie histórica para el panel de detalle (drill-down) del frontend —
+  // ver IndicadoresService.serieHistorica.
+  @Get('serie')
+  serie(@Query('indicador') indicador: string, @Query('periodo') periodo: string, @Query('cantidad') cantidad?: string) {
+    return this.indicadores.serieHistorica(indicador, periodo, cantidad ? parseInt(cantidad, 10) : 12);
   }
 }
