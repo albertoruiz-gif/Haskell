@@ -2,9 +2,11 @@
 
 Propuestas de endurecimiento para `.github/workflows/ci-cd.yml`, no implementadas todavía. Rescatadas de una investigación previa que quedó pegada dentro de `CONSTITUTION.md`; se separan acá porque son una extensión concreta del pipeline, no una regla del agente.
 
-## 0. Gap conocido y aceptado — `sca-dependencias (frontend)` en rojo
+## 0. Gap conocido y aceptado — `next@14.2.5` sin parche, umbral bajado en frontend
 
-Desde el run del 2026-07-31, el job `sca-dependencias` falla para `frontend` en `npm audit --audit-level=high`: 16 vulnerabilidades altas en Next.js (SSRF, cache confusion, exposición de endpoints internos del Server Action) y en PostCSS (XSS, path traversal vía sourcemap). El fix automático (`npm audit fix --force`) sube Next 14.2.5 → 16.2.12, un cambio mayor con riesgo real de breaking changes (App Router, config, React 18→19). Decisión explícita: no se actualiza todavía; queda como tarea aparte, dedicada, con verificación manual del frontend antes de mergear. Mientras tanto el pipeline se sostiene con este job en rojo — no ocultar ni bajar el `--audit-level` como atajo.
+Desde el run del 2026-07-31, el job `sca-dependencias` fallaba para `frontend` en `npm audit --audit-level=high` por vulnerabilidades altas en Next.js (SSRF, cache confusion, exposición de endpoints internos del Server Action) y en PostCSS (XSS, path traversal vía sourcemap). El fix automático (`npm audit fix --force`) sube Next 14.2.5 → 15.5.16/16.2.x, un cambio mayor con riesgo real de breaking changes (App Router, config, posible React 18→19). Sigue sin actualizarse — queda como tarea aparte, dedicada, con verificación manual completa del frontend (carrito, indicadores, dashboard) antes de mergear.
+
+**Actualización 2026-08-07**: se resolvió la parte segura sin tocar `next` — `npm audit fix` (brace-expansion, js-yaml) y un `overrides.postcss` (fuerza la copia interna de `next` a la versión parchada 8.5.23+ sin bumpear `next`). Solo quedan sin parche `next` (prod, sin fix dentro de la rama 14.x) y `glob` (dev, vía `eslint-config-next`, ya excluido por `--omit=dev`). Decisión explícita del usuario: en vez de dejar `sca-dependencias (frontend)` en rojo permanentemente, se bajó el umbral a `--audit-level=critical` solo para ese job/app en `ci-cd.yml`, aceptando el riesgo de `next` como conocido y documentado — **esto reemplaza la decisión anterior de "no bajar el audit-level como atajo"**. La migración de Next.js a una versión parchada (15.5.16+ o 16.2.5+) sigue pendiente como tarea real, no cosmética.
 
 ## 1. Spec-conformance gates
 
