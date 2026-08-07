@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { Brush, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch, ApiError } from '../../lib/api';
+import { formatearEje, formatearValor, infoIndicador } from '../../lib/indicadores';
 import { PendienteCalculo } from './PendienteCalculo';
 
 const PERIODO_A_ID: Record<string, string> = {
@@ -45,13 +46,15 @@ export function SerieHistoricaChart({ indicador, periodo, cantidad = 12 }: { ind
   const hayDatos = serie.puntos.some((p) => p.valorActual !== null);
   if (!hayDatos) return <PendienteCalculo mensaje={`Sin datos por ${periodo.toLowerCase()} todavía`} />;
 
+  const { unidad } = infoIndicador(indicador);
+
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={serie.puntos} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#1F4A2E" strokeOpacity={0.08} />
         <XAxis dataKey="etiqueta" tick={{ fontSize: 11, fill: '#1F4A2E' }} />
-        <YAxis tick={{ fontSize: 11, fill: '#1F4A2E' }} />
-        <Tooltip />
+        <YAxis tick={{ fontSize: 11, fill: '#1F4A2E' }} tickFormatter={(v: number) => formatearEje(v, unidad)} width={70} />
+        <Tooltip formatter={(valor: number) => formatearValor(valor, unidad)} />
         <Line type="monotone" dataKey="valorActual" name="Valor" stroke="#1F4A2E" strokeWidth={2} dot={{ r: 3 }} connectNulls />
         <Line type="monotone" dataKey="meta" name="Meta" stroke="#8A9A4E" strokeWidth={1.5} strokeDasharray="5 4" dot={false} connectNulls />
         <Brush dataKey="etiqueta" height={20} stroke="#1F4A2E" travellerWidth={8} />

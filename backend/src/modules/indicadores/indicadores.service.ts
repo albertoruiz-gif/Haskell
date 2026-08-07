@@ -69,15 +69,37 @@ export class IndicadoresService {
     return { comercial, finanzas };
   }
 
-  async comercial(): Promise<ValorIndicador[]> {
+  /**
+   * `canal` (opcional, uno de CANALES en indicadores.constants.ts) desglosa
+   * los 4 indicadores calculables por canal — Order.canal ya existe en cada
+   * pedido, no hace falta ningún dato nuevo. La meta usada es la específica
+   * de ese canal si existe (MetaIndicador.canal), si no cae a la global —
+   * ver armarValor/metaVigenteEn.
+   */
+  async comercial(canal?: string | null): Promise<ValorIndicador[]> {
     const { desde, hasta } = this.rangoMesActual();
     const metas = await this.metasVigentes(INDICADORES_COMERCIALES);
     const claves = ['ventas_netas', 'ticket_promedio', 'venta_promedio_asesor_activo', 'cumplimiento_meta'] as const;
     const valores: Partial<Record<IndicadorKey, number | null>> = {};
     for (const indicador of claves) {
-      valores[indicador] = await this.valorEnRango(indicador, desde, hasta);
+      valores[indicador] = await this.valorEnRango(indicador, desde, hasta, canal ?? null);
     }
-    return INDICADORES_COMERCIALES.map((indicador) => this.armarValor(indicador, metas, valores[indicador] ?? null));
+    return INDICADORES_COMERCIALES.map((indicador) => this.armarValor(indicador, metas, valores[indicador] ?? null, canal ?? null));
+  }
+
+  /**
+   * "Ventas por canal" (gráfica de composición de la pestaña Comercial) —
+   * ventas_netas del mes actual para cada uno de los 3 canales reales.
+   */
+  async ventasPorCanal(): Promise<{ canal: string; valor: number }[]> {
+    const { desde, hasta } = this.rangoMesActual();
+    const canales = ['SALONES_BELLEZA', 'RETAIL', 'COMERCIO_MINORISTA'];
+    const resultado = [];
+    for (const canal of canales) {
+      const valor = await this.valorEnRango('ventas_netas', desde, hasta, canal);
+      resultado.push({ canal, valor: valor ?? 0 });
+    }
+    return resultado;
   }
 
   async finanzas(): Promise<ValorIndicador[]> {
@@ -140,39 +162,43 @@ export class IndicadoresService {
   // --- Cálculo por rango de fechas, compartido entre el snapshot del mes
   // actual (comercial/operaciones) y la serie histórica. ---
 
-  private async valorEnRango(indicador: IndicadorKey, desde: Date, hasta: Date): Promise<number | null> {
+  private async valorEnRango(indicador: IndicadorKey, desde: Date, hasta: Date, canal: string | null = null): Promise<number | null> {
     switch (indicador) {
       case 'ventas_netas': {
-        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta, canal);
         return pedidos.length > 0 ? this.sumarVentaPvp(pedidos) : null;
       }
       case 'ticket_promedio': {
-        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta, canal);
         return pedidos.length > 0 ? this.sumarVentaPvp(pedidos) / pedidos.length : null;
       }
       case 'venta_promedio_asesor_activo': {
-        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta, canal);
         const asesoresActivos = new Set(pedidos.map((p) => p.asesorId)).size;
         return asesoresActivos > 0 ? this.sumarVentaPvp(pedidos) / asesoresActivos : null;
       }
       case 'cumplimiento_meta': {
-        const pedidos = await this.ordenesPagadasEnRango(desde, hasta);
+        const pedidos = await this.ordenesPagadasEnRango(desde, hasta, canal);
         if (pedidos.length === 0) return null;
-        const metaVentas = await this.metaVigenteEn('ventas_netas', hasta);
+        const metaVentas = await this.metaVigenteEn('ventas_netas', hasta, canal);
         return metaVentas ? (this.sumarVentaPvp(pedidos) / metaVentas) * 100 : null;
       }
       case 'pedidos_completos_a_tiempo':
-        return (await this.calcularOperativosEnRango(desde, hasta)).pctATiempo;
+        return (await this.calcularOperativosEnRango(desde, hasta, canal)).pctATiempo;
       case 'tiempo_ciclo_pedido':
-        return (await this.calcularOperativosEnRango(desde, hasta)).cicloDias;
+        return (await this.calcularOperativosEnRango(desde, hasta, canal)).cicloDias;
       default:
         return null;
     }
   }
 
-  private async calcularOperativosEnRango(desde: Date, hasta: Date): Promise<{ pctATiempo: number | null; cicloDias: number | null }> {
+  private async calcularOperativosEnRango(
+    desde: Date,
+    hasta: Date,
+    canal: string | null = null,
+  ): Promise<{ pctATiempo: number | null; cicloDias: number | null }> {
     const entregados = await this.prisma.order.findMany({
-      where: { estado: 'ENTREGADO', pagadoEn: { gte: desde, lte: hasta } },
+      where: { estado: 'ENTREGADO', pagadoEn: { gte: desde, lte: hasta }, ...(canal ? { canal: canal as never } : {}) },
       include: { entrega: true },
     });
     const conEntrega = entregados.filter((o) => o.entrega && o.pagadoEn);
@@ -198,9 +224,13 @@ export class IndicadoresService {
     return { desde, hasta: ahora };
   }
 
-  private async ordenesPagadasEnRango(desde: Date, hasta: Date) {
+  private async ordenesPagadasEnRango(desde: Date, hasta: Date, canal: string | null = null) {
     return this.prisma.order.findMany({
-      where: { pagadoEn: { gte: desde, lte: hasta }, estado: { not: 'CANCELADO_DEVUELTO' } },
+      where: {
+        pagadoEn: { gte: desde, lte: hasta },
+        estado: { not: 'CANCELADO_DEVUELTO' },
+        ...(canal ? { canal: canal as never } : {}),
+      },
       include: { items: true },
     });
   }
@@ -225,30 +255,43 @@ export class IndicadoresService {
     return porIndicador;
   }
 
-  // Meta global vigente en una fecha puntual (para la serie histórica) —
-  // a diferencia de metasVigentes() (vigente HOY), esta mira vigenciaDesde/
+  // Meta vigente en una fecha puntual (para la serie histórica) — a
+  // diferencia de metasVigentes() (vigente HOY), esta mira vigenciaDesde/
   // vigenciaHasta contra la fecha pedida, así la línea de meta de un
-  // período viejo refleja el objetivo que regía en ese momento.
-  private async metaVigenteEn(indicador: string, fecha: Date): Promise<number | null> {
+  // período viejo refleja el objetivo que regía en ese momento. Si se pide
+  // un canal y no hay meta específica para ese canal, cae a la meta global.
+  private async metaVigenteEn(indicador: string, fecha: Date, canal: string | null = null): Promise<number | null> {
     const meta = await this.prisma.metaIndicador.findFirst({
       where: {
         indicador,
-        canal: null,
+        canal: canal as never,
         vigenciaDesde: { lte: fecha },
         OR: [{ vigenciaHasta: null }, { vigenciaHasta: { gte: fecha } }],
       },
       orderBy: { vigenciaDesde: 'desc' },
     });
-    return meta ? Number(meta.valorObjetivo) : null;
+    if (meta) return Number(meta.valorObjetivo);
+    if (canal !== null) return this.metaVigenteEn(indicador, fecha, null);
+    return null;
   }
 
-  private armarValor(indicador: IndicadorKey, metas: Map<string, MetaVigente[]>, valorActual: number | null = null): ValorIndicador {
-    const metaGlobal = metas.get(indicador)?.find((m) => m.canal === null);
+  // Meta específica del canal si existe, si no la global — mismo criterio
+  // de fallback que metaVigenteEn pero contra la lista ya cargada en memoria
+  // (metasVigentes), para no repetir consultas en comercial()/operaciones().
+  private armarValor(
+    indicador: IndicadorKey,
+    metas: Map<string, MetaVigente[]>,
+    valorActual: number | null = null,
+    canal: string | null = null,
+  ): ValorIndicador {
+    const lista = metas.get(indicador);
+    const metaDelCanal = canal ? lista?.find((m) => m.canal === canal) : undefined;
+    const metaGlobal = lista?.find((m) => m.canal === null);
     return {
       indicador,
       valorActual: valorActual !== null ? Math.round(valorActual * 100) / 100 : null,
-      meta: metaGlobal?.valor ?? null,
-      canal: null,
+      meta: (metaDelCanal ?? metaGlobal)?.valor ?? null,
+      canal,
     };
   }
 

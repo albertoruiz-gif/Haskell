@@ -52,6 +52,16 @@ export const UNIDAD_CORTA: Record<Unidad, string> = {
   cantidad: 'unds',
 };
 
+// Formato corto para ejes de gráficas (con comas de miles y la unidad) —
+// formatearValor() de abajo es el formato completo para tooltips/cards.
+export function formatearEje(valor: number, unidad: Unidad): string {
+  const numero = valor.toLocaleString('es-PE', { maximumFractionDigits: 0 });
+  if (unidad === 'porcentaje') return `${numero}%`;
+  if (unidad === 'moneda') return `S/ ${numero}`;
+  if (unidad === 'dias') return `${numero}d`;
+  return numero;
+}
+
 export function formatearValor(valor: number | null, unidad: Unidad): string {
   if (valor === null) return 'Pendiente de cálculo';
   switch (unidad) {

@@ -24,8 +24,15 @@ export class IndicadoresController {
   }
 
   @Get('comercial')
-  comercial() {
-    return this.indicadores.comercial();
+  comercial(@Query('canal') canal?: string) {
+    const CANALES_VALIDOS = ['SALONES_BELLEZA', 'RETAIL', 'COMERCIO_MINORISTA'];
+    return this.indicadores.comercial(canal && CANALES_VALIDOS.includes(canal) ? canal : null);
+  }
+
+  // "Ventas por canal" — gráfica de composición de la pestaña Comercial.
+  @Get('comercial/ventas-por-canal')
+  ventasPorCanal() {
+    return this.indicadores.ventasPorCanal();
   }
 
   @Get('finanzas')

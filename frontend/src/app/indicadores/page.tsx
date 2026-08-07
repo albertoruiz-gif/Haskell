@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { getUsuario } from '../../lib/auth';
 import { GerencialTab } from '../../components/indicadores/GerencialTab';
+import { ComercialTab } from '../../components/indicadores/ComercialTab';
 import { TabIndicadores } from '../../components/indicadores/TabIndicadores';
 import { MetasTab } from '../../components/indicadores/MetasTab';
 
@@ -59,7 +60,7 @@ export default function IndicadoresPage() {
       </div>
 
       {tab === 'gerencial' && <GerencialTab onIrAPestana={setTab} />}
-      {tab === 'comercial' && <TabIndicadores endpoint="/indicadores/comercial" tituloComposicion="Ventas por canal" />}
+      {tab === 'comercial' && <ComercialTab />}
       {tab === 'finanzas' && <TabIndicadores endpoint="/indicadores/finanzas" tituloComposicion="Rentabilidad por canal" />}
       {tab === 'operaciones' && <TabIndicadores endpoint="/indicadores/operaciones" tituloComposicion="Pedidos por estado" />}
       {tab === 'marketing' && <TabIndicadores endpoint="/indicadores/marketing" />}
