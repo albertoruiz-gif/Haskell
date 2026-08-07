@@ -109,6 +109,11 @@ export const CANAL_LABEL: Record<string, string> = {
   COMERCIO_MINORISTA: 'Minorista',
 };
 
+// Opciones del combo de período — compartidas entre el drill-down y la
+// gráfica "Ventas netas vs meta" de Gerencial.
+export const PERIODOS = ['Día', 'Semana', 'Mes', 'Bimestre', 'Trimestre', 'Semestre', 'Año'] as const;
+export type Periodo = (typeof PERIODOS)[number];
+
 export type ValorIndicador = {
   indicador: string;
   valorActual: number | null;

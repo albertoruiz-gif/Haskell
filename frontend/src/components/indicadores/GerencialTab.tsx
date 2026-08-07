@@ -6,8 +6,8 @@ import { ErrorBanner } from '../ui/ErrorBanner';
 import { IndicadorCard } from './IndicadorCard';
 import { DrillDownPanel } from './DrillDownPanel';
 import { SerieHistoricaChart } from './SerieHistoricaChart';
-import { calcularEstado, ESTADO_COLOR, ESTADO_LABEL, infoIndicador } from '../../lib/indicadores';
-import type { ValorIndicador } from '../../lib/indicadores';
+import { calcularEstado, ESTADO_COLOR, ESTADO_LABEL, infoIndicador, PERIODOS } from '../../lib/indicadores';
+import type { Periodo, ValorIndicador } from '../../lib/indicadores';
 
 type RespuestaGerencial = { comercial: ValorIndicador[]; finanzas: ValorIndicador[] };
 
@@ -28,6 +28,7 @@ export function GerencialTab({ onIrAPestana }: { onIrAPestana: (id: 'comercial' 
   const [operaciones, setOperaciones] = useState<ValorIndicador[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [seleccionado, setSeleccionado] = useState<ValorIndicador | null>(null);
+  const [periodoVentas, setPeriodoVentas] = useState<Periodo>('Mes');
 
   useEffect(() => {
     Promise.all([apiFetch<RespuestaGerencial>('/indicadores/gerencial'), apiFetch<ValorIndicador[]>('/indicadores/operaciones')])
@@ -72,8 +73,21 @@ export function GerencialTab({ onIrAPestana }: { onIrAPestana: (id: 'comercial' 
           </div>
 
           <div className="rounded-card bg-white p-4 shadow-sm">
-            <p className="mb-2 text-sm font-medium text-bosque">Ventas netas vs meta — últimos 6 meses</p>
-            <SerieHistoricaChart indicador="ventas_netas" periodo="Mes" cantidad={6} />
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-medium text-bosque">Ventas netas vs meta</p>
+              <select
+                value={periodoVentas}
+                onChange={(e) => setPeriodoVentas(e.target.value as Periodo)}
+                className="rounded-pill border border-musgo/30 bg-white px-3 py-1 text-xs text-bosque"
+              >
+                {PERIODOS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <SerieHistoricaChart indicador="ventas_netas" periodo={periodoVentas} cantidad={periodoVentas === 'Mes' ? 6 : 10} />
           </div>
 
           <div>

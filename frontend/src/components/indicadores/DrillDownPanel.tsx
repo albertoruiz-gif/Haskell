@@ -1,11 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { calcularEstado, ESTADO_LABEL, ESTADO_TEXTO, formatearValor, infoIndicador } from '../../lib/indicadores';
+import { calcularEstado, ESTADO_LABEL, ESTADO_TEXTO, formatearValor, infoIndicador, PERIODOS } from '../../lib/indicadores';
 import type { ValorIndicador } from '../../lib/indicadores';
 import { SerieHistoricaChart } from './SerieHistoricaChart';
-
-const PERIODOS = ['Día', 'Semana', 'Mes', 'Bimestre', 'Trimestre', 'Semestre', 'Año'] as const;
 
 type FilaSeguimiento = {
   id: string;
