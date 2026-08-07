@@ -5,6 +5,7 @@ export type Usuario = {
   nombre: string;
   rol: string;
   canal: string | null;
+  liderId?: string | null;
 };
 
 type Sesion = {

@@ -27,6 +27,13 @@ const config: Config = {
           light: '#F8A050',
         },
         crema: '#FAF8F2',
+        // Semáforo de estado del tablero de indicadores (a favor/en
+        // riesgo/en contra de la meta) — semántico, deliberadamente
+        // separado del acento de marca (acento/promo), ver
+        // docs/PROMPT_dashboard_indicadores_frontend.md sección 4.
+        exito: '#2E8B4F',
+        alerta: '#D9A017',
+        riesgo: '#C0392B',
       },
       borderRadius: {
         card: '16px',

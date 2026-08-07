@@ -13,6 +13,8 @@ const TABS = [
   { href: '/gestion', label: 'Gestión' },
   { href: '/almacen', label: 'Almacén' },
   { href: '/delivery', label: 'Delivery' },
+  { href: '/indicadores', label: 'Indicadores' },
+  { href: '/mi-equipo', label: 'Mi equipo' },
 ];
 
 // Qué pestañas puede usar cada rol, según los permisos reales del backend
@@ -23,11 +25,14 @@ const TABS = [
 const TABS_POR_ROL: Record<string, string[]> = {
   ASESOR: ['/catalogo', '/carrito'],
   VENDEDOR: ['/catalogo', '/carrito'],
-  LIDER_MINORISTA: ['/gestion'],
-  ADMINISTRADOR: ['/catalogo', '/gestion', '/almacen', '/delivery'],
-  GERENTE_COMERCIAL: ['/catalogo', '/gestion'],
+  // Los Líderes tienen su propia pestaña acotada a su equipo, no el
+  // tablero gerencial completo (ver docs/PROMPT_dashboard_indicadores_frontend.md sección 5).
+  LIDER_MINORISTA: ['/gestion', '/mi-equipo'],
+  ADMINISTRADOR: ['/catalogo', '/gestion', '/almacen', '/delivery', '/indicadores'],
+  GERENTE_GENERAL: ['/indicadores'],
+  GERENTE_COMERCIAL: ['/catalogo', '/gestion', '/indicadores'],
   GESTOR_CATALOGO: ['/catalogo', '/gestion'],
-  FINANZAS: ['/gestion'],
+  FINANZAS: ['/gestion', '/indicadores'],
   ALMACEN: ['/almacen', '/delivery'],
   TRANSPORTISTA: ['/delivery'],
 };
