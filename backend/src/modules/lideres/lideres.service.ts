@@ -93,7 +93,12 @@ export class LideresService {
       this.comisionGanada(id),
       this.prisma.asesor.findMany({
         where: { liderId: id },
-        select: { id: true, codigo: true, user: { select: { nombre: true } } },
+        select: {
+          id: true,
+          codigo: true,
+          user: { select: { nombre: true } },
+          direcciones: { select: { distrito: true, predeterminada: true } },
+        },
       }),
     ]);
 
@@ -121,10 +126,15 @@ export class LideresService {
             acc + p.items.reduce((s, i) => s + (Number(i.pvpUnitario) - Number(i.precioAsesorUnitario)) * i.cantidad, 0),
           0,
         );
+        // Mismo criterio de fallback que orders.service.ts al armar la
+        // orden de despacho: la dirección marcada predeterminada, o la
+        // primera si por algún motivo ninguna lo está.
+        const direccion = a.direcciones.find((d) => d.predeterminada) ?? a.direcciones[0];
         return {
           asesorId: a.id,
           codigo: a.codigo,
           nombre: a.user.nombre,
+          distrito: direccion?.distrito ?? null,
           totalVentaPvp: Math.round(totalVentaPvp * 100) / 100,
           comisionAsesor: Math.round(comisionAsesor * 100) / 100,
           cantidadPedidos: pedidos.length,

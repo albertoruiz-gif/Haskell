@@ -16,6 +16,7 @@ type ResumenAsesor = {
   asesorId: string;
   codigo: string;
   nombre: string;
+  distrito: string | null;
   totalVentaPvp: number;
   comisionAsesor: number;
   cantidadPedidos: number;
@@ -88,6 +89,7 @@ export default function MiEquipoPage() {
                       <th className="py-1 pr-2">#</th>
                       <th className="py-1 pr-2">Asesor</th>
                       <th className="py-1 pr-2">Código</th>
+                      <th className="py-1 pr-2">Distrito</th>
                       <th className="py-1 pr-2 text-right">Vendido</th>
                       <th className="py-1 pr-2 text-right">Su comisión</th>
                       <th className="py-1 text-right">Pedidos</th>
@@ -99,6 +101,7 @@ export default function MiEquipoPage() {
                         <td className="py-1.5 pr-2 text-bosque/50">{i + 1}</td>
                         <td className="py-1.5 pr-2 font-medium text-bosque">{a.nombre}</td>
                         <td className="py-1.5 pr-2 text-bosque/60">{a.codigo}</td>
+                        <td className="py-1.5 pr-2 text-bosque/60">{a.distrito ?? '—'}</td>
                         <td className="py-1.5 pr-2 text-right">{formatoSoles(a.totalVentaPvp)}</td>
                         <td className="py-1.5 pr-2 text-right">{formatoSoles(a.comisionAsesor)}</td>
                         <td className="py-1.5 text-right">{a.cantidadPedidos}</td>
