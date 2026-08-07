@@ -1,54 +1,60 @@
 'use client';
 
-// Resumen de premios del asesor — Carrito (RF pedido por Alberto 2026-08-07):
-// cuánto lleva vendido este mes y cuánto le falta para el próximo nivel de
-// la escala que armó su Gerente Comercial en Gestión → Premios. Reinicia
-// cada mes; el histórico (para la gráfica) sí queda guardado porque se
-// recalcula siempre desde los pedidos reales, nunca se pisa.
+// Pantalla de premios del asesor — Carrito (RF pedido por Alberto
+// 2026-08-07, ampliado 2026-08-07 tras revisar que no se veía clara:
+// cómo va en la semana, el acumulado del mes, cuántos premios ganó en total
+// y cuánto le falta para el próximo. Todo siempre visible, no hay nada
+// escondido detrás de un "ver más" — ese fue justamente el problema antes.
 
 import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch, ApiError } from '../../lib/api';
-import { formatoSoles, pctAvance, type ProgresoPremio, type SeriePremio } from '../../lib/premios';
+import { formatoSoles, pctAvance, type HistorialPremios, type ProgresoPremio, type SeriePremio } from '../../lib/premios';
 
 export function ResumenPremios() {
   const [progreso, setProgreso] = useState<ProgresoPremio | null>(null);
   const [serie, setSerie] = useState<SeriePremio | null>(null);
+  const [historial, setHistorial] = useState<HistorialPremios | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [verGrafica, setVerGrafica] = useState(false);
 
   useEffect(() => {
     apiFetch<ProgresoPremio>('/premios/mi-resumen')
       .then(setProgreso)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No se pudo cargar tu progreso de premios.'));
+    apiFetch<SeriePremio>('/premios/mi-serie?meses=6').then(setSerie).catch(() => {});
+    apiFetch<HistorialPremios>('/premios/mi-historial').then(setHistorial).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!verGrafica || serie) return;
-    apiFetch<SeriePremio>('/premios/mi-serie?meses=6').then(setSerie).catch(() => {});
-  }, [verGrafica, serie]);
-
   if (error) return null; // no bloquea el checkout si esto falla
-  if (!progreso) return null;
+  if (!progreso) return <div className="rounded-card bg-white p-3 shadow-sm"><p className="text-xs text-bosque/40">Cargando tu progreso de premios…</p></div>;
 
-  const { ventaDelMes, nivelActual, nivelSiguiente, faltante } = progreso;
+  const { ventaSemana, ventaDelMes, nivelActual, nivelSiguiente, faltante } = progreso;
   const avance = pctAvance(progreso);
 
   return (
     <div className="rounded-card bg-white p-3 shadow-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-bosque">Tus premios este mes</p>
-        <button onClick={() => setVerGrafica((v) => !v)} className="text-xs text-acento underline">
-          {verGrafica ? 'Ocultar histórico' : 'Ver histórico'}
-        </button>
+      <p className="text-sm font-medium text-bosque">Tus premios</p>
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="rounded-card bg-crema p-2">
+          <p className="text-[11px] uppercase text-bosque/50">Esta semana</p>
+          <p className="text-base font-semibold text-bosque">{formatoSoles(ventaSemana)}</p>
+        </div>
+        <div className="rounded-card bg-crema p-2">
+          <p className="text-[11px] uppercase text-bosque/50">Este mes</p>
+          <p className="text-base font-semibold text-bosque">{formatoSoles(ventaDelMes)}</p>
+        </div>
       </div>
 
-      <p className="mt-1 text-xs text-bosque/60">
-        Llevas vendido <span className="font-medium text-bosque">{formatoSoles(ventaDelMes)}</span> este mes
-        {nivelActual && <> — ya alcanzaste <span className="font-medium text-acento">{nivelActual.nombre}</span></>}.
+      <p className="mt-2 text-xs text-bosque/60">
+        {nivelActual ? (
+          <>Ya alcanzaste <span className="font-medium text-acento">{nivelActual.nombre}</span> este mes.</>
+        ) : (
+          'Todavía no alcanzás ningún nivel este mes.'
+        )}
       </p>
 
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-pill bg-crema">
+      <div className="mt-1 h-2 w-full overflow-hidden rounded-pill bg-crema">
         <div className="h-full rounded-pill bg-acento transition-all" style={{ width: `${avance}%` }} />
       </div>
 
@@ -64,25 +70,44 @@ export function ResumenPremios() {
         </p>
       )}
 
-      {verGrafica && (
-        <div className="mt-3 border-t border-musgo/10 pt-2">
-          {!serie && <p className="py-4 text-center text-xs text-bosque/40">Cargando…</p>}
-          {serie && (
-            <ResponsiveContainer width="100%" height={140}>
-              <BarChart data={serie.puntos} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F4A2E" strokeOpacity={0.08} />
-                <XAxis dataKey="etiqueta" tick={{ fontSize: 10, fill: '#1F4A2E' }} />
-                <YAxis tick={{ fontSize: 10, fill: '#1F4A2E' }} width={50} tickFormatter={(v: number) => `S/${v}`} />
-                <Tooltip
-                  formatter={(valor: number) => formatoSoles(valor)}
-                  labelFormatter={(_, payload) => payload?.[0]?.payload?.nivelActual ?? ''}
-                />
-                <Bar dataKey="venta" name="Vendido" fill="#1F4A2E" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      )}
+      <div className="mt-3 border-t border-musgo/10 pt-2">
+        <p className="mb-1 text-xs font-medium text-bosque">Últimos 6 meses</p>
+        {!serie && <p className="py-4 text-center text-xs text-bosque/40">Cargando…</p>}
+        {serie && (
+          <ResponsiveContainer width="100%" height={130}>
+            <BarChart data={serie.puntos} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1F4A2E" strokeOpacity={0.08} />
+              <XAxis dataKey="etiqueta" tick={{ fontSize: 10, fill: '#1F4A2E' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#1F4A2E' }} width={50} tickFormatter={(v: number) => `S/${v}`} />
+              <Tooltip
+                formatter={(valor: number) => formatoSoles(valor)}
+                labelFormatter={(_, payload) => payload?.[0]?.payload?.nivelActual ?? ''}
+              />
+              <Bar dataKey="venta" name="Vendido" fill="#1F4A2E" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      <div className="mt-3 border-t border-musgo/10 pt-2">
+        <p className="text-xs font-medium text-bosque">
+          Premios ganados{historial && <span className="text-bosque/50"> ({historial.totalPremiosGanados})</span>}
+        </p>
+        {!historial && <p className="py-2 text-xs text-bosque/40">Cargando…</p>}
+        {historial && historial.logros.length === 0 && (
+          <p className="py-1 text-xs text-bosque/50">Todavía no ganaste ningún premio — seguí vendiendo para desbloquear el primero.</p>
+        )}
+        {historial && historial.logros.length > 0 && (
+          <ul className="mt-1 space-y-1">
+            {historial.logros.map((l, i) => (
+              <li key={i} className="flex items-center justify-between text-xs">
+                <span className="text-bosque/60">{l.mes}</span>
+                <span className="rounded-pill bg-crema px-2 py-0.5 font-medium text-acento">🏆 {l.nivel}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

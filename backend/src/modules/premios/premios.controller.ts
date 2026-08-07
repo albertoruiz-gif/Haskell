@@ -53,6 +53,12 @@ export class PremiosController {
     return this.premios.serieMensualAsesor(req.user.asesorId, Number(meses) || 6);
   }
 
+  @Get('mi-historial')
+  @Roles('ASESOR')
+  miHistorial(@Req() req: any) {
+    return this.premios.historialPremios(req.user.asesorId);
+  }
+
   // --- Vista del Líder/Gerente/Admin sobre un asesor puntual (drill-down desde Mi equipo) ---
 
   @Get('asesor/:asesorId/serie')
@@ -60,6 +66,13 @@ export class PremiosController {
   async serieDeAsesor(@Param('asesorId') asesorId: string, @Query('meses') meses: string, @Req() req: any) {
     await this.verificarAccesoAsesor(asesorId, req.user);
     return this.premios.serieMensualAsesor(asesorId, Number(meses) || 6);
+  }
+
+  @Get('asesor/:asesorId/historial')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'LIDER_MINORISTA')
+  async historialDeAsesor(@Param('asesorId') asesorId: string, @Req() req: any) {
+    await this.verificarAccesoAsesor(asesorId, req.user);
+    return this.premios.historialPremios(asesorId);
   }
 
   private async verificarAccesoAsesor(asesorId: string, user: any) {

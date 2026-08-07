@@ -5,11 +5,14 @@ const MESES_ABREV = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'se
 
 export type NivelPublico = { id: string; nombre: string; descripcion: string | null; montoMinimo: number };
 export type ProgresoPremio = {
+  ventaSemana: number;
   ventaDelMes: number;
   nivelActual: NivelPublico | null;
   nivelSiguiente: NivelPublico | null;
   faltante: number | null;
 };
+export type LogroPremio = { mes: string; nivel: string };
+export type HistorialPremios = { totalPremiosGanados: number; logros: LogroPremio[] };
 
 /**
  * Escala de premios por venta mensual, por canal (RF pedido por Alberto
@@ -69,10 +72,34 @@ export class PremiosService {
 
   async resumenAsesor(asesorId: string): Promise<ProgresoPremio> {
     const asesor = await this.prisma.asesor.findUniqueOrThrow({ where: { id: asesorId } });
-    const { desde, hasta } = this.rangoMesActual();
-    const ventaDelMes = await this.ventaAsesorEnRango(asesorId, desde, hasta);
+    const { desde: desdeMes, hasta } = this.rangoMesActual();
+    const { desde: desdeSemana } = this.rangoSemanaActual();
+    const [ventaDelMes, ventaSemana] = await Promise.all([
+      this.ventaAsesorEnRango(asesorId, desdeMes, hasta),
+      this.ventaAsesorEnRango(asesorId, desdeSemana, hasta),
+    ]);
     const niveles = await this.nivelesVigentesEn(asesor.canal, hasta);
-    return this.armarProgreso(ventaDelMes, niveles);
+    return { ventaSemana, ...this.armarProgreso(ventaDelMes, niveles) };
+  }
+
+  /**
+   * "Cuántos premios ganó" — cuenta, mes a mes desde que el asesor existe,
+   * en cuántos llegó a algún nivel (con la escala que estaba vigente EN ESE
+   * mes, mismo criterio que la serie). No hay tope de tiempo artificial más
+   * allá de la fecha de alta del asesor.
+   */
+  async historialPremios(asesorId: string): Promise<HistorialPremios> {
+    const asesor = await this.prisma.asesor.findUniqueOrThrow({ where: { id: asesorId } });
+    const mesesDesdeAlta = this.mesesEntre(asesor.createdAt, new Date()) + 1;
+    const buckets = this.generarBucketsMensuales(Math.min(Math.max(mesesDesdeAlta, 1), 36));
+    const logros: LogroPremio[] = [];
+    for (const b of buckets) {
+      const venta = await this.ventaAsesorEnRango(asesorId, b.desde, b.hasta);
+      const niveles = await this.nivelesVigentesEn(asesor.canal, b.hasta);
+      const { nivelActual } = this.armarProgreso(venta, niveles);
+      if (nivelActual) logros.push({ mes: b.etiqueta, nivel: nivelActual.nombre });
+    }
+    return { totalPremiosGanados: logros.length, logros: logros.reverse() };
   }
 
   /** Serie mensual histórica — para el asesor y para su Líder (RF 2026-08-07). */
@@ -99,6 +126,21 @@ export class PremiosService {
     const ahora = new Date();
     const desde = new Date(ahora.getFullYear(), ahora.getMonth(), 1, 0, 0, 0, 0);
     return { desde, hasta: ahora };
+  }
+
+  // Semana calendario lunes-domingo (convención de negocio en Perú), no
+  // "últimos 7 días" — así "cómo voy en la semana" arranca en cero cada
+  // lunes, igual que el mes arranca en cero cada 1°.
+  private rangoSemanaActual(): { desde: Date; hasta: Date } {
+    const ahora = new Date();
+    const diaSemana = ahora.getDay(); // 0=domingo .. 6=sábado
+    const offsetHastaLunes = diaSemana === 0 ? 6 : diaSemana - 1;
+    const desde = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - offsetHastaLunes, 0, 0, 0, 0);
+    return { desde, hasta: ahora };
+  }
+
+  private mesesEntre(desde: Date, hasta: Date): number {
+    return (hasta.getFullYear() - desde.getFullYear()) * 12 + (hasta.getMonth() - desde.getMonth());
   }
 
   private generarBucketsMensuales(cantidad: number): { desde: Date; hasta: Date; etiqueta: string }[] {
@@ -134,7 +176,7 @@ export class PremiosService {
     return niveles.map((n) => ({ id: n.id, nombre: n.nombre, descripcion: n.descripcion, montoMinimo: Number(n.montoMinimo) }));
   }
 
-  private armarProgreso(ventaDelMes: number, niveles: NivelPublico[]): ProgresoPremio {
+  private armarProgreso(ventaDelMes: number, niveles: NivelPublico[]): Omit<ProgresoPremio, 'ventaSemana'> {
     let nivelActual: NivelPublico | null = null;
     let nivelSiguiente: NivelPublico | null = null;
     for (const nivel of niveles) {

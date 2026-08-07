@@ -4,6 +4,7 @@
 export type NivelPremio = { id: string; nombre: string; descripcion: string | null; montoMinimo: number };
 
 export type ProgresoPremio = {
+  ventaSemana: number;
   ventaDelMes: number;
   nivelActual: NivelPremio | null;
   nivelSiguiente: NivelPremio | null;
@@ -12,6 +13,9 @@ export type ProgresoPremio = {
 
 export type PuntoSeriePremio = { etiqueta: string; venta: number; nivelActual: string | null };
 export type SeriePremio = { canal: string; puntos: PuntoSeriePremio[] };
+
+export type LogroPremio = { mes: string; nivel: string };
+export type HistorialPremios = { totalPremiosGanados: number; logros: LogroPremio[] };
 
 export const CANAL_LABEL: Record<string, string> = {
   RETAIL: 'Retail',
