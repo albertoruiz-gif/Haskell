@@ -11,6 +11,9 @@ import { formatoSoles } from '../../lib/premios';
 import { formatearNumeroPedido } from '../../lib/numeroPedido';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
 import { ProductosTopPie } from '../../components/ui/ProductosTopPie';
+import { SerieHistoricaChart } from '../../components/indicadores/SerieHistoricaChart';
+import { PERIODOS } from '../../lib/indicadores';
+import type { Periodo } from '../../lib/indicadores';
 
 type Pedido = { numero: number; canal: string; fecha: string; monto: number; comision: number; cantidadItems: number };
 type Mes = { etiqueta: string; totalVenta: number; comisionMes: number; pedidos: Pedido[] };
@@ -20,6 +23,7 @@ export default function MisVentasPage() {
   const [data, setData] = useState<HistorialVentas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mesAbierto, setMesAbierto] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<Periodo>('Mes');
 
   useEffect(() => {
     apiFetch<HistorialVentas>('/premios/mi-historial-ventas')
@@ -52,8 +56,28 @@ export default function MisVentasPage() {
             </div>
           </div>
 
-          <div className="max-w-md">
-            <ProductosTopPie endpoint="/indicadores/mis-productos-top" titulo="Tus productos más vendidos (mes actual)" />
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-[1fr_360px] lg:items-start">
+            <div className="rounded-card bg-white p-3 shadow-sm">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium text-bosque">Tu corrida de ventas</p>
+                <select
+                  value={periodo}
+                  onChange={(e) => setPeriodo(e.target.value as Periodo)}
+                  className="rounded-pill border border-musgo/30 bg-white px-2 py-1 text-xs text-bosque"
+                >
+                  {PERIODOS.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+              <SerieHistoricaChart
+                indicador="ventas_netas"
+                periodo={periodo}
+                cantidad={periodo === 'Mes' ? 6 : 10}
+                endpoint="/indicadores/mi-serie"
+              />
+            </div>
+            <ProductosTopPie endpoint="/indicadores/mis-productos-top" titulo="Tus productos más vendidos (mes)" />
           </div>
 
           <div className="rounded-card bg-white p-4 shadow-sm">

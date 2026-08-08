@@ -296,6 +296,27 @@ export class IndicadoresService {
     return { pctATiempo: (aTiempo / conEntrega.length) * 100, cicloDias: diasTotales / conEntrega.length };
   }
 
+  /**
+   * Corrida de ventas propias del asesor, mismo selector día/semana/mes/
+   * .../año que el tablero gerencial (RF 2026-08-08: "Mis Ventas" también
+   * necesita esta gráfica, no solo el pie de productos).
+   */
+  async serieVentasAsesor(asesorId: string, periodoCrudo: string, cantidadCruda: number) {
+    const periodo: PeriodoId = (PERIODOS_VALIDOS as readonly string[]).includes(periodoCrudo) ? (periodoCrudo as PeriodoId) : 'mes';
+    const cantidad = Math.min(Math.max(Math.trunc(cantidadCruda) || 12, 1), 36);
+    const buckets = this.generarBuckets(periodo, cantidad);
+    const puntos = [];
+    for (const b of buckets) {
+      const pedidos = await this.prisma.order.findMany({
+        where: { asesorId, pagadoEn: { gte: b.desde, lte: b.hasta }, estado: { not: 'CANCELADO_DEVUELTO' } },
+        include: { items: true },
+      });
+      const valorActual = pedidos.length > 0 ? this.sumarVentaPvp(pedidos) : null;
+      puntos.push({ etiqueta: b.etiqueta, valorActual: valorActual !== null ? Math.round(valorActual * 100) / 100 : null, meta: null });
+    }
+    return { indicador: 'ventas_netas', periodo, puntos };
+  }
+
   rangoMesActualPublico(): { desde: Date; hasta: Date } {
     return this.rangoMesActual();
   }

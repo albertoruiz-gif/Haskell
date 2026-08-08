@@ -27,7 +27,17 @@ const PERIODO_A_ID: Record<string, string> = {
 type PuntoSerie = { etiqueta: string; valorActual: number | null; meta: number | null };
 type RespuestaSerie = { indicador: string; periodo: string; puntos: PuntoSerie[] };
 
-export function SerieHistoricaChart({ indicador, periodo, cantidad = 12 }: { indicador: string; periodo: string; cantidad?: number }) {
+export function SerieHistoricaChart({
+  indicador,
+  periodo,
+  cantidad = 12,
+  endpoint = '/indicadores/serie',
+}: {
+  indicador: string;
+  periodo: string;
+  cantidad?: number;
+  endpoint?: string;
+}) {
   const [serie, setSerie] = useState<RespuestaSerie | null>(null);
   const [error, setError] = useState<string | null>(null);
   const periodoId = PERIODO_A_ID[periodo] ?? 'mes';
@@ -35,10 +45,10 @@ export function SerieHistoricaChart({ indicador, periodo, cantidad = 12 }: { ind
   useEffect(() => {
     setSerie(null);
     setError(null);
-    apiFetch<RespuestaSerie>(`/indicadores/serie?indicador=${indicador}&periodo=${periodoId}&cantidad=${cantidad}`)
+    apiFetch<RespuestaSerie>(`${endpoint}?indicador=${indicador}&periodo=${periodoId}&cantidad=${cantidad}`)
       .then(setSerie)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'No se pudo cargar la serie histórica.'));
-  }, [indicador, periodoId, cantidad]);
+  }, [indicador, periodoId, cantidad, endpoint]);
 
   if (error) return <PendienteCalculo mensaje={error} />;
   if (!serie) return <p className="py-8 text-center text-xs text-bosque/40">Cargando…</p>;

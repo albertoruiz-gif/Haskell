@@ -68,6 +68,13 @@ export class IndicadoresController {
 
   // Misma gráfica, para "Mis Ventas" del propio asesor — fuerza su asesorId,
   // ignora canal (usa siempre el suyo vía asesorId).
+  // Corrida de ventas propias — mismo selector que /indicadores/serie, para "Mis Ventas".
+  @Get('mi-serie')
+  @Roles('ASESOR')
+  miSerie(@Req() req: any, @Query('periodo') periodo: string, @Query('cantidad') cantidad?: string) {
+    return this.indicadores.serieVentasAsesor(req.user.asesorId, periodo, cantidad ? parseInt(cantidad, 10) : 12);
+  }
+
   @Get('mis-productos-top')
   @Roles('ASESOR')
   misProductosTop(@Req() req: any, @Query('nivel') nivel?: string, @Query('categoria') categoria?: string) {
