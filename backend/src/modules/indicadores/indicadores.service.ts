@@ -156,9 +156,33 @@ export class IndicadoresService {
     return resultado;
   }
 
+  /**
+   * Aplica las fórmulas de Indicadores_Financieros_Dashboard_Haskell.md
+   * sobre el registro manual del mes vigente (DatoFinancieroMensual — no
+   * hay Odoo Contabilidad conectado, ver comentario del modelo) + las
+   * ventas_netas que ya se calculan localmente. Sin registro ese mes, los
+   * 5 quedan en null igual que antes (pendiente de cálculo).
+   */
   async finanzas(): Promise<ValorIndicador[]> {
     const metas = await this.metasVigentes(INDICADORES_FINANCIEROS);
-    return INDICADORES_FINANCIEROS.map((indicador) => this.armarValor(indicador, metas));
+    const { desde, hasta } = this.rangoMesActual();
+    const dato = await this.prisma.datoFinancieroMensual.findFirst({ where: { periodo: desde } });
+    const ventasNetas = await this.valorEnRango('ventas_netas', desde, hasta);
+
+    const valores: Partial<Record<IndicadorKey, number | null>> = {};
+    if (dato && ventasNetas) {
+      const cv = Number(dato.costoVentas);
+      valores.margen_bruto_pct = ((ventasNetas - cv) / ventasNetas) * 100;
+      valores.flujo_caja_operativo =
+        Number(dato.cobros) - Number(dato.pagosProveedores) - Number(dato.gastosOperativos) - Number(dato.sueldos) - Number(dato.impuestos);
+      valores.costo_importado_producto = dato.costoImportadoUnitario ? Number(dato.costoImportadoUnitario) : null;
+      const dio = cv > 0 ? (Number(dato.inventarioPromedio) / cv) * 365 : 0;
+      const dso = (Number(dato.cuentasPorCobrarPromedio) / ventasNetas) * 365;
+      const dpo = Number(dato.compras) > 0 ? (Number(dato.cuentasPorPagarPromedio) / Number(dato.compras)) * 365 : 0;
+      valores.ciclo_conversion_efectivo = dio + dso - dpo;
+      valores.cuentas_por_cobrar_vencidas = Number(dato.cuentasPorCobrarVencidas);
+    }
+    return INDICADORES_FINANCIEROS.map((indicador) => this.armarValor(indicador, metas, valores[indicador] ?? null));
   }
 
   async operaciones(): Promise<ValorIndicador[]> {
