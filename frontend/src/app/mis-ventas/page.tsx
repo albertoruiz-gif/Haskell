@@ -52,7 +52,9 @@ export default function MisVentasPage() {
             </div>
           </div>
 
-          <ProductosTopPie endpoint="/indicadores/mis-productos-top" titulo="Tus productos más vendidos (mes actual)" />
+          <div className="max-w-md">
+            <ProductosTopPie endpoint="/indicadores/mis-productos-top" titulo="Tus productos más vendidos (mes actual)" />
+          </div>
 
           <div className="rounded-card bg-white p-4 shadow-sm">
             <p className="mb-2 text-sm font-medium text-bosque">Historial mes a mes</p>

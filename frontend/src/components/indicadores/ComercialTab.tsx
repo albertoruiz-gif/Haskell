@@ -15,8 +15,9 @@ import { IndicadorCard } from './IndicadorCard';
 import { DrillDownPanel } from './DrillDownPanel';
 import { GraficaComposicion, type DatoComposicion } from './GraficaComposicion';
 import { ProductosTopPie } from '../ui/ProductosTopPie';
-import { CANAL_LABEL, CANALES } from '../../lib/indicadores';
-import type { ValorIndicador } from '../../lib/indicadores';
+import { SerieHistoricaChart } from './SerieHistoricaChart';
+import { CANAL_LABEL, CANALES, PERIODOS } from '../../lib/indicadores';
+import type { Periodo, ValorIndicador } from '../../lib/indicadores';
 
 const OPCIONES_CANAL = [{ id: null, label: 'Todos' }, ...CANALES.map((c) => ({ id: c, label: CANAL_LABEL[c] ?? c }))];
 
@@ -27,6 +28,7 @@ export function ComercialTab() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
   const [seleccionado, setSeleccionado] = useState<ValorIndicador | null>(null);
+  const [periodoVentas, setPeriodoVentas] = useState<Periodo>('Mes');
 
   useEffect(() => {
     setCargando(true);
@@ -71,9 +73,25 @@ export function ComercialTab() {
         ))}
       </div>
 
-      <GraficaComposicion titulo="Ventas por canal" datos={composicion} unidad="moneda" />
-
-      <ProductosTopPie endpoint="/indicadores/productos-top" titulo="Productos más vendidos (mes actual)" />
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+        <GraficaComposicion titulo="Ventas por canal" datos={composicion} unidad="moneda" />
+        <ProductosTopPie endpoint="/indicadores/productos-top" titulo="Productos más vendidos (mes)" />
+        <div className="rounded-card bg-white p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium text-bosque">Ventas netas (corrida)</p>
+            <select
+              value={periodoVentas}
+              onChange={(e) => setPeriodoVentas(e.target.value as Periodo)}
+              className="rounded-pill border border-musgo/30 bg-white px-2 py-1 text-xs text-bosque"
+            >
+              {PERIODOS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+          <SerieHistoricaChart indicador="ventas_netas" periodo={periodoVentas} cantidad={periodoVentas === 'Mes' ? 6 : 10} />
+        </div>
+      </div>
 
       {seleccionado && <DrillDownPanel dato={seleccionado} onClose={() => setSeleccionado(null)} />}
     </div>
