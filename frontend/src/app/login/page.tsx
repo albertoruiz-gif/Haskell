@@ -38,7 +38,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center">
-      <form onSubmit={onSubmit} className="w-full space-y-3 rounded-card bg-white p-4 shadow-sm">
+      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-3 rounded-card bg-white p-5 shadow-sm">
         <h1 className="text-lg font-medium text-bosque">Iniciar sesión</h1>
 
         {sesionVencida && (

@@ -8,13 +8,17 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
 // Misma pantalla para activación de cuenta nueva y recuperación de clave
 // olvidada — el backend no distingue el destino, solo valida el token
-// (ver AuthService.generarYEnviarToken).
+// (ver AuthService.generarYEnviarToken). Ojo con la copy: la confusión más
+// común es que la gente busca una "clave anterior" que nunca existió —
+// en altas nuevas la clave inicial es aleatoria y nadie la conoce, así que
+// este formulario tiene que dejar clarísimo que se elige de cero acá mismo.
 export default function RestablecerPasswordPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token') ?? '';
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [confirmar, setConfirmar] = useState('');
+  const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [listo, setListo] = useState(false);
@@ -23,16 +27,12 @@ export default function RestablecerPasswordPage() {
     e.preventDefault();
     setError(null);
 
-    if (!token) {
-      setError('El enlace no es válido — pedí uno nuevo desde "¿Olvidaste tu contraseña?".');
-      return;
-    }
     if (nuevaPassword.length < 8) {
       setError('La contraseña debe tener al menos 8 caracteres.');
       return;
     }
     if (nuevaPassword !== confirmar) {
-      setError('Las contraseñas no coinciden.');
+      setError('Las contraseñas no coinciden — revisá que estén escritas igual en los dos campos.');
       return;
     }
 
@@ -42,34 +42,55 @@ export default function RestablecerPasswordPage() {
       setListo(true);
       setTimeout(() => router.push('/login'), 2500);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo actualizar la contraseña.');
+      setError(err instanceof ApiError ? err.message : 'No se pudo actualizar la contraseña. Probá de nuevo.');
     } finally {
       setCargando(false);
     }
   }
 
+  const tipoInput = verClave ? 'text' : 'password';
+
   return (
     <div className="flex min-h-[70vh] items-center justify-center">
-      <div className="w-full space-y-3 rounded-card bg-white p-4 shadow-sm">
-        <h1 className="text-lg font-medium text-bosque">Elegí tu contraseña</h1>
-
-        {listo ? (
-          <p className="rounded-card bg-musgo/10 p-3 text-sm text-bosque/80">
-            Contraseña actualizada. Te llevamos al inicio de sesión…
+      <div className="w-full max-w-sm space-y-3 rounded-card bg-white p-5 shadow-sm">
+        <div>
+          <h1 className="text-lg font-medium text-bosque">Elegí tu contraseña</h1>
+          <p className="mt-1 text-xs text-bosque/60">
+            No necesitás ninguna clave anterior — escribí acá la que vas a usar de ahora en adelante.
           </p>
+        </div>
+
+        {!token ? (
+          <div className="space-y-3">
+            <p className="rounded-card bg-red-50 px-3 py-2 text-xs text-red-700">
+              Este enlace no trae la información necesaria para continuar. Abrilo directo desde el correo que
+              recibiste, sin copiar solo una parte del link.
+            </p>
+            <Link
+              href="/recuperar-password"
+              className="block w-full rounded-pill bg-bosque py-2 text-center text-sm font-medium text-white"
+            >
+              Pedir un enlace nuevo
+            </Link>
+          </div>
+        ) : listo ? (
+          <div className="space-y-3">
+            <p className="rounded-card bg-musgo/10 p-3 text-sm text-bosque/80">
+              Contraseña guardada. Te llevamos al inicio de sesión…
+            </p>
+            <Link href="/login" className="block w-full rounded-pill bg-bosque py-2 text-center text-sm font-medium text-white">
+              Ir a iniciar sesión ahora
+            </Link>
+          </div>
         ) : (
           <form onSubmit={onSubmit} className="space-y-3">
-            {!token && (
-              <p className="rounded-card bg-red-50 px-3 py-2 text-xs text-red-700">
-                Este enlace no trae un token válido — abrilo desde el correo que te enviamos.
-              </p>
-            )}
             <div>
               <label className="text-xs font-medium uppercase text-bosque/60">Nueva contraseña</label>
               <input
-                type="password"
+                type={tipoInput}
                 required
                 minLength={8}
+                autoFocus
                 value={nuevaPassword}
                 onChange={(e) => setNuevaPassword(e.target.value)}
                 className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
@@ -78,7 +99,7 @@ export default function RestablecerPasswordPage() {
             <div>
               <label className="text-xs font-medium uppercase text-bosque/60">Confirmar contraseña</label>
               <input
-                type="password"
+                type={tipoInput}
                 required
                 minLength={8}
                 value={confirmar}
@@ -86,6 +107,11 @@ export default function RestablecerPasswordPage() {
                 className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
               />
             </div>
+
+            <label className="flex items-center gap-2 text-xs text-bosque/60">
+              <input type="checkbox" checked={verClave} onChange={(e) => setVerClave(e.target.checked)} />
+              Mostrar las contraseñas
+            </label>
 
             <ErrorBanner mensaje={error} />
 
