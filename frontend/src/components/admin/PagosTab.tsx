@@ -74,7 +74,10 @@ export function PagosTab() {
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-bosque/60">El asesor paga por Yape y acá se confirma manualmente que el pago llegó.</p>
+      <p className="text-xs text-bosque/60">
+        El cargo por Yape ahora es automático vía Culqi — este panel es monitoreo. &ldquo;Marcar como pagado manualmente&rdquo; es
+        solo para resolver casos puntuales donde el cargo automático falló.
+      </p>
       <ErrorBanner mensaje={error} />
       {cargando && <p className="text-xs text-bosque/50">Cargando…</p>}
       {!cargando && pedidos.length === 0 && <p className="text-xs text-bosque/50">Todavía no hay pedidos.</p>}
@@ -96,7 +99,7 @@ export function PagosTab() {
           {p.estado === 'PENDIENTE_PAGO' && (
             <div className="mt-2 flex gap-2">
               <button onClick={() => validar(p.id)} className="flex-1 rounded-pill bg-bosque py-2 text-xs font-medium text-white">
-                Validar pago
+                Marcar como pagado manualmente
               </button>
               <button onClick={() => rechazar(p.id)} className="flex-1 rounded-pill bg-crema py-2 text-xs font-medium text-acento">
                 Rechazar
