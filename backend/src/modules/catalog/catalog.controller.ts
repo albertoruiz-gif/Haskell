@@ -121,13 +121,17 @@ export class CatalogController {
     // en cada tecla, así que a mitad de escribir "shampoo" el texto es
     // "shampo", "shamp", etc. — un match exacto de la palabra completa
     // nunca llega a dispararse mientras se escribe.
-    const GRUPOS_SINONIMOS = ['champu', 'shampoo'];
+    // "champu" (sin tilde, lo que se escribe) nunca matchea contra "Champú"
+    // (como está guardado el nombre real) porque el ILIKE de Postgres no
+    // ignora tildes — por eso el grupo incluye la forma con tilde también,
+    // no solo el sinónimo en inglés.
+    const GRUPOS_SINONIMOS = ['champu', 'champú', 'shampoo'];
     const variantesBusqueda = (termino: string): string[] => {
       const lower = termino.toLowerCase().trim();
       if (lower.length < 4) return [termino];
-      const palabra = GRUPOS_SINONIMOS.find((p) => p.startsWith(lower) || lower.startsWith(p));
-      if (!palabra) return [termino];
-      return [termino, ...GRUPOS_SINONIMOS.filter((p) => p !== palabra)];
+      const coincide = GRUPOS_SINONIMOS.some((p) => p.startsWith(lower) || lower.startsWith(p));
+      if (!coincide) return [termino];
+      return [termino, ...GRUPOS_SINONIMOS];
     };
 
     const filtroBusqueda = busqueda
