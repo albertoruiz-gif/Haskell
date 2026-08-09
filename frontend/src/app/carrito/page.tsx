@@ -165,7 +165,7 @@ export default function CarritoPage() {
         <div className="space-y-3">
           <h1 className="text-lg font-medium text-bosque">Tu carrito</h1>
 
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_360px] lg:items-start">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
             <div className="space-y-3">
               <div className="relative rounded-card bg-white p-2 shadow-sm">
                 <input
@@ -222,53 +222,55 @@ export default function CarritoPage() {
               )}
             </div>
 
-            <div className="space-y-3">
+            <div>
               <ResumenPremios />
-
-              <div className="rounded-card bg-white p-3 shadow-sm">
-                <p className="text-sm font-medium text-bosque">Dirección de entrega</p>
-                <p className="text-sm text-acento">Se usa tu dirección predeterminada registrada</p>
-                <p className="mt-1 text-xs text-bosque/50">El envío se calcula en el servidor según el distrito de esa dirección.</p>
-              </div>
-
-              <div className="rounded-card bg-white p-3 shadow-sm">
-                <div className="flex justify-between text-sm text-bosque/70">
-                  <span>Subtotal</span>
-                  <span>S/ {subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm text-bosque/70">
-                  <span>Envío (referencial)</span>
-                  <span>S/ {envio.toFixed(2)}</span>
-                </div>
-                <div className="mt-1 flex justify-between border-t border-musgo/10 pt-1 text-base font-medium text-bosque">
-                  <span>Total</span>
-                  <span>S/ {total.toFixed(2)}</span>
-                </div>
-                <p className="mt-1 text-[11px] text-bosque/40">El monto final (con envío real) lo calcula el servidor al crear el pedido.</p>
-              </div>
-
-              <div className="rounded-card border-2 border-acento bg-white p-3">
-                <p className="text-sm font-medium text-bosque">Pagar con Yape</p>
-                <div className="mt-2 flex items-center justify-between rounded-pill border-2 border-acento px-3 py-2">
-                  <div>
-                    <p className="text-sm font-medium text-acento">Yape</p>
-                    <p className="text-xs text-bosque/60">Cargo automático — te vamos a pedir tu celular y el código Yape en el siguiente paso</p>
-                  </div>
-                  <span className="rounded-pill bg-musgo px-2 py-1 text-xs font-medium text-white">Único medio</span>
-                </div>
-              </div>
-
-              <ErrorBanner mensaje={error} />
-
-              <button
-                onClick={crearPedido}
-                disabled={items.length === 0 || pagando}
-                className="w-full rounded-pill bg-acento py-3 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {pagando ? 'Creando pedido…' : `Continuar — S/ ${total.toFixed(2)}`}
-              </button>
             </div>
           </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <div className="rounded-card bg-white p-3 shadow-sm">
+              <p className="text-sm font-medium text-bosque">Dirección de entrega</p>
+              <p className="text-sm text-acento">Se usa tu dirección predeterminada registrada</p>
+              <p className="mt-1 text-xs text-bosque/50">El envío se calcula en el servidor según el distrito de esa dirección.</p>
+            </div>
+
+            <div className="rounded-card bg-white p-3 shadow-sm">
+              <div className="flex justify-between text-sm text-bosque/70">
+                <span>Subtotal</span>
+                <span>S/ {subtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-bosque/70">
+                <span>Envío (referencial)</span>
+                <span>S/ {envio.toFixed(2)}</span>
+              </div>
+              <div className="mt-1 flex justify-between border-t border-musgo/10 pt-1 text-base font-medium text-bosque">
+                <span>Total</span>
+                <span>S/ {total.toFixed(2)}</span>
+              </div>
+              <p className="mt-1 text-[11px] text-bosque/40">El monto final (con envío real) lo calcula el servidor al crear el pedido.</p>
+            </div>
+
+            <div className="rounded-card border-2 border-acento bg-white p-3">
+              <p className="text-sm font-medium text-bosque">Pagar con Yape</p>
+              <div className="mt-2 flex items-center justify-between rounded-pill border-2 border-acento px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium text-acento">Yape</p>
+                  <p className="text-xs text-bosque/60">Cargo automático — celular y código Yape en el siguiente paso</p>
+                </div>
+                <span className="rounded-pill bg-musgo px-2 py-1 text-xs font-medium text-white">Único medio</span>
+              </div>
+            </div>
+          </div>
+
+          <ErrorBanner mensaje={error} />
+
+          <button
+            onClick={crearPedido}
+            disabled={items.length === 0 || pagando}
+            className="w-full rounded-pill bg-acento py-3 text-sm font-medium text-white disabled:opacity-50 lg:w-auto lg:px-8"
+          >
+            {pagando ? 'Creando pedido…' : `Continuar — S/ ${total.toFixed(2)}`}
+          </button>
         </div>
       )}
     </>
