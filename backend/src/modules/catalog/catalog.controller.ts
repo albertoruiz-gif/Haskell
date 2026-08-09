@@ -117,15 +117,17 @@ export class CatalogController {
     // del lado del cliente en useFiltrosCatalogo.ts para el Catálogo; acá
     // hace falta también porque el buscador del Carrito pega directo a este
     // endpoint en cada tecla, no filtra sobre una lista ya cargada.
-    const GRUPOS_SINONIMOS = [['champu', 'shampoo']];
+    // Coincidencia por prefijo (no "includes" exacto): el buscador dispara
+    // en cada tecla, así que a mitad de escribir "shampoo" el texto es
+    // "shampo", "shamp", etc. — un match exacto de la palabra completa
+    // nunca llega a dispararse mientras se escribe.
+    const GRUPOS_SINONIMOS = ['champu', 'shampoo'];
     const variantesBusqueda = (termino: string): string[] => {
-      const lower = termino.toLowerCase();
-      const extra = GRUPOS_SINONIMOS.flatMap(([a, b]) => {
-        if (lower.includes(a)) return [lower.replace(a, b)];
-        if (lower.includes(b)) return [lower.replace(b, a)];
-        return [];
-      });
-      return [termino, ...extra];
+      const lower = termino.toLowerCase().trim();
+      if (lower.length < 4) return [termino];
+      const palabra = GRUPOS_SINONIMOS.find((p) => p.startsWith(lower) || lower.startsWith(p));
+      if (!palabra) return [termino];
+      return [termino, ...GRUPOS_SINONIMOS.filter((p) => p !== palabra)];
     };
 
     const filtroBusqueda = busqueda
