@@ -19,7 +19,7 @@ import { useCart } from '../../components/cart/CartContext';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
 import { ResumenPremios } from '../../components/premios/ResumenPremios';
 
-type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number };
+type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number; stockDisponible?: number };
 type Pedido = { id: string; numero: number; canal: string; referenciaWeb: string };
 
 declare global {
@@ -185,7 +185,7 @@ export default function CarritoPage() {
                       <button
                         key={p.sku}
                         onClick={() => {
-                          agregar({ catalogLineId: p.id, sku: p.sku, nombre: p.nombre ?? p.sku, precioUnitario: p.precioAsesor });
+                          agregar({ catalogLineId: p.id, sku: p.sku, nombre: p.nombre ?? p.sku, precioUnitario: p.precioAsesor, stockDisponible: p.stockDisponible });
                           setBusqueda('');
                         }}
                         className="flex w-full items-center justify-between rounded-card px-2 py-2 text-left text-sm hover:bg-crema"
@@ -211,10 +211,24 @@ export default function CarritoPage() {
                           <p className="text-xs text-acento">S/ {item.precioUnitario.toFixed(2)} c/u</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 rounded-pill bg-crema px-2 py-1">
-                        <button aria-label="Restar" onClick={() => actualizarCantidad(item.sku, item.cantidad - 1)} className="text-bosque">−</button>
-                        <span className="text-sm">{item.cantidad}</span>
-                        <button aria-label="Sumar" onClick={() => actualizarCantidad(item.sku, item.cantidad + 1)} className="text-bosque">+</button>
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2 rounded-pill bg-crema px-2 py-1">
+                          <button aria-label="Restar" onClick={() => actualizarCantidad(item.sku, item.cantidad - 1)} className="text-bosque">−</button>
+                          <span className="text-sm">{item.cantidad}</span>
+                          <button
+                            aria-label="Sumar"
+                            onClick={() => actualizarCantidad(item.sku, item.cantidad + 1)}
+                            disabled={item.stockDisponible !== undefined && item.cantidad >= item.stockDisponible}
+                            className="text-bosque disabled:opacity-30"
+                          >
+                            +
+                          </button>
+                        </div>
+                        {item.stockDisponible !== undefined && (
+                          <span className={`text-[11px] ${item.cantidad >= item.stockDisponible ? 'text-promo' : 'text-bosque/40'}`}>
+                            Stock: {item.stockDisponible}
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}

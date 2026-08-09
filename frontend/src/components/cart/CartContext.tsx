@@ -13,6 +13,7 @@ export type ItemCarrito = {
   nombre: string;
   precioUnitario: number;
   cantidad: number;
+  stockDisponible?: number;
 };
 
 type CartContextValue = {

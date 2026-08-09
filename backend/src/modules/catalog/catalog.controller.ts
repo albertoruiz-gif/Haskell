@@ -112,14 +112,30 @@ export class CatalogController {
   async catalogoVigente(@Req() req: any, @Query('busqueda') busqueda?: string) {
     const canalDelUsuario = req.user.canal; // proviene del JWT, no del querystring
 
+    // Sinonimos comerciales reales del rubro (ej. "champú"/"shampoo") — sin
+    // esto, buscar uno no encontraba el otro. Mismo criterio que ya existe
+    // del lado del cliente en useFiltrosCatalogo.ts para el Catálogo; acá
+    // hace falta también porque el buscador del Carrito pega directo a este
+    // endpoint en cada tecla, no filtra sobre una lista ya cargada.
+    const GRUPOS_SINONIMOS = [['champu', 'shampoo']];
+    const variantesBusqueda = (termino: string): string[] => {
+      const lower = termino.toLowerCase();
+      const extra = GRUPOS_SINONIMOS.flatMap(([a, b]) => {
+        if (lower.includes(a)) return [lower.replace(a, b)];
+        if (lower.includes(b)) return [lower.replace(b, a)];
+        return [];
+      });
+      return [termino, ...extra];
+    };
+
     const filtroBusqueda = busqueda
       ? {
-          OR: [
-            { sku: { contains: busqueda, mode: 'insensitive' as const } },
-            { nombre: { contains: busqueda, mode: 'insensitive' as const } },
-            { categoria: { contains: busqueda, mode: 'insensitive' as const } },
-            { linea: { contains: busqueda, mode: 'insensitive' as const } },
-          ],
+          OR: variantesBusqueda(busqueda).flatMap((v) => [
+            { sku: { contains: v, mode: 'insensitive' as const } },
+            { nombre: { contains: v, mode: 'insensitive' as const } },
+            { categoria: { contains: v, mode: 'insensitive' as const } },
+            { linea: { contains: v, mode: 'insensitive' as const } },
+          ]),
         }
       : undefined;
 
