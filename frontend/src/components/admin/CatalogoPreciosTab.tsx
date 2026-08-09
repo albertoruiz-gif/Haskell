@@ -89,12 +89,17 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
     setResultadoSync(null);
     setSincronizando(true);
     try {
-      const r = await apiFetch<{ productosEnOdoo: number; actualizados: number; sinCambios: number; sinCoincidencia: number }>(
-        '/catalogo/admin/sincronizar-odoo',
-        { method: 'POST' },
-      );
+      const r = await apiFetch<{
+        productosEnOdoo: number;
+        actualizados: number;
+        sinCambios: number;
+        sinCoincidencia: number;
+        omitidosPorCanal: number;
+      }>('/catalogo/admin/sincronizar-odoo', { method: 'POST' });
       setResultadoSync(
-        `${r.actualizados} producto(s) actualizado(s), ${r.sinCambios} ya estaban al día, ${r.sinCoincidencia} sin coincidencia por SKU (de ${r.productosEnOdoo} en Odoo).`,
+        `${r.actualizados} producto(s) actualizado(s), ${r.sinCambios} ya estaban al día, ${r.sinCoincidencia} sin coincidencia por SKU` +
+          (r.omitidosPorCanal > 0 ? `, ${r.omitidosPorCanal} omitido(s) por tener precio propio en Salones de Belleza` : '') +
+          ` (de ${r.productosEnOdoo} en Odoo).`,
       );
       await cargarLineas(catalogoId);
     } catch (err) {

@@ -224,6 +224,13 @@ export class CatalogController {
   // requeriría un parser que todavía no existe — se arma aparte cuando haga
   // falta. Tampoco crea líneas nuevas para SKUs de Odoo sin coincidencia acá
   // (no hay forma de saber a qué canal/catálogo asignarlas automáticamente).
+  //
+  // Canal-consciente (2026-08-09): Odoo solo tiene un list_price por
+  // producto, que corresponde al precio de Comercio Minorista/Retail
+  // (Precio Público). Salones de Belleza maneja su propio precio
+  // (Precio Salón) fuera de Odoo, así que sus líneas se excluyen de este
+  // sync automático para que no se les pise el precio en cada corrida —
+  // ahí el PVP se mantiene a mano vía admin/lineas/:id/precio.
   @Post('admin/sincronizar-odoo')
   @Roles('ADMINISTRADOR', 'GESTOR_CATALOGO')
   async sincronizarDesdeOdoo() {
@@ -231,15 +238,23 @@ export class CatalogController {
     let actualizados = 0;
     let sinCambios = 0;
     let sinCoincidencia = 0;
+    let omitidosPorCanal = 0;
 
     for (const p of productosOdoo) {
       if (!p.default_code) continue;
-      const lineas = await this.prisma.catalogLine.findMany({ where: { sku: p.default_code } });
+      const lineas = await this.prisma.catalogLine.findMany({
+        where: { sku: p.default_code },
+        include: { catalog: { select: { canal: true } } },
+      });
       if (lineas.length === 0) {
         sinCoincidencia++;
         continue;
       }
       for (const linea of lineas) {
+        if (linea.catalog.canal === 'SALONES_BELLEZA') {
+          omitidosPorCanal++;
+          continue;
+        }
         const nombreCambio = p.name && p.name !== linea.nombre;
         const pvpCambio = Number(linea.pvpCampania) !== p.list_price;
         if (!nombreCambio && !pvpCambio) {
@@ -255,7 +270,7 @@ export class CatalogController {
       }
     }
 
-    return { productosEnOdoo: productosOdoo.length, actualizados, sinCambios, sinCoincidencia };
+    return { productosEnOdoo: productosOdoo.length, actualizados, sinCambios, sinCoincidencia, omitidosPorCanal };
   }
 
   @Patch('admin/lineas/:id/precio')
