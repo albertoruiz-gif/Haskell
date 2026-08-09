@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../config/prisma.service';
 import { PremiosService } from '../premios/premios.service';
+import { AuthService } from '../auth/auth.service';
 
 /**
  * Líder/Supervisor de equipo (rol LIDER_MINORISTA) — afilia y tiene a
@@ -15,6 +16,7 @@ export class LideresService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly premios: PremiosService,
+    private readonly authService: AuthService,
   ) {}
 
   async crear(data: { email: string; nombre: string; telefono: string; comisionPct?: number }) {
@@ -27,6 +29,7 @@ export class LideresService {
         rol: 'LIDER_MINORISTA',
       },
     });
+    await this.authService.iniciarActivacion(user.id, user.email, user.nombre);
 
     return this.prisma.lider.create({
       data: { userId: user.id, telefono: data.telefono, comisionPct: data.comisionPct ?? 5 },

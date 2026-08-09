@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../config/prisma.service';
+import { AuthService } from '../auth/auth.service';
 
 /**
  * Gerente Comercial (rol GERENTE_COMERCIAL) — ya tenía permisos amplios
@@ -12,7 +13,10 @@ import { PrismaService } from '../../config/prisma.service';
  */
 @Injectable()
 export class GerentesComercialesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
+  ) {}
 
   async crear(data: { email: string; nombre: string; telefono: string; comisionPct?: number }) {
     const claveTemporal = Math.random().toString(36).slice(-10);
@@ -24,6 +28,7 @@ export class GerentesComercialesService {
         rol: 'GERENTE_COMERCIAL',
       },
     });
+    await this.authService.iniciarActivacion(user.id, user.email, user.nombre);
 
     return this.prisma.gerenteComercial.create({
       data: { userId: user.id, telefono: data.telefono, comisionPct: data.comisionPct ?? 4 },

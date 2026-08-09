@@ -33,6 +33,11 @@ enum RolUsuario {
   FINANZAS
 }
 
+enum TipoTokenAcceso {
+  ACTIVACION // primera clave de un usuario recien dado de alta
+  RECUPERACION // "olvide mi contraseña"
+}
+
 enum EstadoCatalogo {
   BORRADOR
   EN_VALIDACION
@@ -125,8 +130,27 @@ model User {
   lider        Lider?
   gerenteComercial GerenteComercial?
   auditLogs    AuditLog[] @relation("ActorAuditLog")
+  tokensAcceso TokenAcceso[]
 
   @@map("users")
+}
+
+// RF-001: activacion de cuenta nueva y recuperacion de clave olvidada, ambas
+// via un link firmado de un solo uso que expira — nunca se guarda el token
+// en claro, solo su hash (mismo criterio que passwordHash), para que una
+// fuga de la tabla no habilite tomar cuentas.
+model TokenAcceso {
+  id        String          @id @default(cuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id])
+  tokenHash String          @unique
+  tipo      TipoTokenAcceso
+  expiraEn  DateTime
+  usadoEn   DateTime?
+  createdAt DateTime        @default(now())
+
+  @@index([userId])
+  @@map("tokens_acceso")
 }
 
 model Asesor {

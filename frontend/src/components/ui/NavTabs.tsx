@@ -103,9 +103,9 @@ export function NavTabs() {
         </nav>
         {usuario && pathname !== '/login' && (
           <div className="flex shrink-0 items-center gap-3 text-xs">
-            <span className="text-bosque/70">
+            <Link href="/mi-cuenta" className="text-bosque/70 hover:text-acento">
               {usuario.nombre} · <span className="text-bosque/50">{usuario.rol}</span>
-            </span>
+            </Link>
             <button onClick={cerrarSesion} className="rounded-pill bg-crema px-3 py-1.5 font-medium text-acento">
               Cerrar sesión
             </button>
@@ -119,9 +119,9 @@ export function NavTabs() {
           <Logo className="h-12" />
           {usuario && pathname !== '/login' && (
             <div className="flex items-center gap-2 text-xs">
-              <span className="hidden text-bosque/70 sm:inline">
+              <Link href="/mi-cuenta" className="hidden text-bosque/70 hover:text-acento sm:inline">
                 {usuario.nombre} · <span className="text-bosque/50">{usuario.rol}</span>
-              </span>
+              </Link>
               <button onClick={cerrarSesion} className="font-medium text-acento">
                 Cerrar sesión
               </button>

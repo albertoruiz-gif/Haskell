@@ -24,7 +24,11 @@ import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
 // TODO (fuera de este scaffold, ver README "Lo que falta"):
-// - NotificacionesModule: correo/WhatsApp, RF-037
+// - Notificaciones: el correo de activación/recuperación de clave (RF-001) ya
+//   se envía vía OdooClient.enviarCorreo mientras AWS SES siga en sandbox
+//   (caso 178577914400530) — falta WhatsApp saliente (RF-037) para el resto
+//   de notificaciones (hoy integraciones/whatsapp.service.ts solo responde
+//   consultas entrantes, no puede enviar mensajes por su cuenta).
 // - AnaliticaModule: paneles y exportaciones, RF-031 a RF-033
 @Module({
   imports: [

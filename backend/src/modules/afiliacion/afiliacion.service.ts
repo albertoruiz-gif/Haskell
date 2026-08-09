@@ -3,6 +3,7 @@ import * as ExcelJS from 'exceljs';
 import * as bcrypt from 'bcrypt';
 import { Canal } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
+import { AuthService } from '../auth/auth.service';
 
 export interface FilaAfiliacion {
   fila: number;
@@ -33,7 +34,10 @@ export interface ErrorFila {
 
 @Injectable()
 export class AfiliacionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
+  ) {}
 
   // RF-006/RF-009: alta individual con validaciones obligatorias.
   // liderQueAfilia: cuando un Lider (rol LIDER_MINORISTA) crea el asesor,
@@ -91,7 +95,7 @@ export class AfiliacionService {
       include: { direcciones: true },
     });
 
-    // TODO: disparar notificacion de activacion (correo/SMS) con link para setear clave definitiva — NotificacionesModule pendiente
+    await this.authService.iniciarActivacion(user.id, user.email, user.nombre);
     return asesor;
   }
 
@@ -225,6 +229,12 @@ export class AfiliacionService {
           },
         },
       });
+      // Carga masiva: muchas filas no traen correo real (se les pone un
+      // placeholder @pendiente.local, ver arriba) — no tiene sentido
+      // intentar enviarles un correo de activación a esa dirección falsa.
+      if (fila.correo) {
+        await this.authService.iniciarActivacion(user.id, user.email, user.nombre);
+      }
       creados.push(asesor);
     }
 

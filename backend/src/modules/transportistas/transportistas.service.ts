@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../config/prisma.service';
+import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class TransportistasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
+  ) {}
 
   async crear(data: { email: string; nombre: string; telefono: string; placa?: string; tarifaPorEntrega: number }) {
     const claveTemporal = Math.random().toString(36).slice(-10);
@@ -16,6 +20,7 @@ export class TransportistasService {
         rol: 'TRANSPORTISTA',
       },
     });
+    await this.authService.iniciarActivacion(user.id, user.email, user.nombre);
 
     return this.prisma.transportista.create({
       data: {

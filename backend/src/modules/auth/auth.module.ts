@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
+import { OdooModule } from '../odoo/odoo.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { JwtStrategy } from './jwt.strategy';
       secret: process.env.JWT_SECRET ?? 'cambia-esto-en-local',
       signOptions: { expiresIn: '8h' },
     }),
+    OdooModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

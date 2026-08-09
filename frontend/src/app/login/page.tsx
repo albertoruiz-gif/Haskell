@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import { saveSession, Usuario } from '../../lib/auth';
@@ -77,6 +78,10 @@ export default function LoginPage() {
         >
           {cargando ? 'Ingresando…' : 'Ingresar'}
         </button>
+
+        <Link href="/recuperar-password" className="block text-center text-xs font-medium text-acento">
+          ¿Olvidaste tu contraseña?
+        </Link>
       </form>
     </div>
   );

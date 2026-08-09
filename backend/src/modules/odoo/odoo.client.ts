@@ -186,6 +186,25 @@ export class OdooClient {
     );
   }
 
+  /**
+   * Envia un correo usando el servidor saliente ya configurado en Odoo — se
+   * usa como relay mientras la cuenta de AWS SES propia siga en sandbox
+   * (ver docs/CI_MEJORAS_FUTURAS.md, caso AWS 178577914400530). Odoo ya
+   * entrega correo a destinatarios externos reales (boletas/facturas), a
+   * diferencia de SES en sandbox que solo entrega a direcciones verificadas.
+   * Si mas adelante SES sale de sandbox, este es el unico lugar a cambiar
+   * (AuthService no sabe ni le importa cual es el transporte real).
+   */
+  async enviarCorreo(params: { para: string; asunto: string; htmlCuerpo: string }): Promise<void> {
+    const mailId = await this.create('mail.mail', {
+      email_to: params.para,
+      subject: params.asunto,
+      body_html: params.htmlCuerpo,
+      auto_delete: true,
+    });
+    await this.execute<boolean>('mail.mail', 'send', [[mailId]]);
+  }
+
   // --- Ofertas -> Odoo (ver catalogo-haskell/PROMPT_trasladar_ofertas_a_odoo.md) ---
 
   private pricelistOfertasId: number | null = null;
