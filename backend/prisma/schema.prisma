@@ -328,6 +328,14 @@ model CatalogLine {
   // reservas activas) — ya NO es editable a mano, se recalcula cada vez que
   // cambia un lote o una reserva (ver InventarioService.recalcularStock).
   stockDisponible           Int      @default(0)
+  // Marca si este SKU tiene stock físico real confirmado (conteo/PDF de
+  // inventario cruzado contra Odoo) — a diferencia de stockDisponible (el
+  // pool de lotes de ESTA línea, hoy desconectado entre canales), esto es
+  // el gate de visibilidad: sin stock confirmado, el producto no aparece
+  // en el catálogo salvo que lo busquen por nombre o SKU exacto (ver
+  // catalog.controller.ts catalogoVigente) — así se puede consultar ficha
+  // técnica sin poder comprarlo.
+  stockConfirmado           Boolean  @default(false)
 
   ofertas                  Offer[]
   cartItems                 CartItem[]

@@ -134,7 +134,11 @@ export class CatalogController {
       return [termino, ...GRUPOS_SINONIMOS];
     };
 
-    const filtroBusqueda = busqueda
+    // Filtro de texto "puro" (sin gate de stock) — se usa tal cual en la
+    // vista previa de administración, donde SÍ interesa ver todo el
+    // catálogo publicado (incluso sin stock confirmado) para poder
+    // gestionarlo.
+    const filtroTextual = busqueda
       ? {
           OR: variantesBusqueda(busqueda).flatMap((v) => [
             { sku: { contains: v, mode: 'insensitive' as const } },
@@ -144,6 +148,23 @@ export class CatalogController {
           ]),
         }
       : undefined;
+
+    // Filtro para el catálogo del asesor (RN nueva 2026-08-10): un producto
+    // sin stock físico confirmado NO debe listarse ni encontrarse por
+    // búsqueda parcial — de lo contrario se puede "vender" algo que no
+    // existe realmente en el almacén. Única excepción: si el asesor
+    // escribe el nombre o SKU EXACTO, sí se muestra (para poder consultar
+    // ficha técnica/activos aunque hoy no tenga stock), pero sigue sin
+    // poder comprarse porque stockDisponible se mantiene en 0 para esos.
+    const filtroBusqueda = busqueda
+      ? {
+          OR: [
+            ...(filtroTextual ? [{ AND: [{ stockConfirmado: true }, filtroTextual] }] : []),
+            { sku: { equals: busqueda, mode: 'insensitive' as const } },
+            { nombre: { equals: busqueda, mode: 'insensitive' as const } },
+          ],
+        }
+      : { stockConfirmado: true };
 
     // Roles sin Asesor asociado (administrador, gestor de catalogo, etc.):
     // no tienen canal propio, asi que en vez de un catalogo vacio les
@@ -160,7 +181,9 @@ export class CatalogController {
           vigenciaDesde: { lte: new Date() },
           vigenciaHasta: { gte: new Date() },
         },
-        include: { lineas: { where: filtroBusqueda, include: { packComponentes: { include: { componente: true } } } } },
+        // Vista previa de administración: sin el gate de stockConfirmado
+        // a propósito — Gestión necesita ver/gestionar todo lo publicado.
+        include: { lineas: { where: filtroTextual, include: { packComponentes: { include: { componente: true } } } } },
         orderBy: { version: 'desc' },
       });
 
