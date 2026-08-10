@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
@@ -41,7 +42,14 @@ class CambiarPasswordDto {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // Auditoria de seguridad 2026-08-10: antes no habia NADA que frenara
+  // fuerza bruta acá (ni limite de requests, ni bloqueo de cuenta pese a
+  // existir MAX_INTENTOS_FALLIDOS sin usar en AuthService). El limite por
+  // IP frena scripts automatizados; el bloqueo por cuenta (dentro de
+  // AuthService.login) cubre el caso de intentos distribuidos entre
+  // varias IPs contra el mismo email.
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   login(@Body() dto: LoginDto, @Req() req: any) {
     return this.authService.login(dto.email, dto.password, req.ip);
@@ -67,6 +75,7 @@ export class AuthController {
 
   // RF-001: "olvidé mi contraseña" — sin @Roles porque el usuario todavía no tiene sesión.
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('olvide-password')
   olvidePassword(@Body() dto: OlvidePasswordDto) {
     return this.authService.solicitarRecuperacion(dto.email);
@@ -74,6 +83,7 @@ export class AuthController {
 
   // Confirma el link recibido por correo (activación o recuperación) y fija la clave nueva.
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('restablecer-password')
   restablecerPassword(@Body() dto: RestablecerPasswordDto) {
     return this.authService.establecerPassword(dto.token, dto.nuevaPassword);

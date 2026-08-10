@@ -21,6 +21,13 @@ export class AuthService {
   ) {}
 
   private readonly MAX_INTENTOS_FALLIDOS = 5;
+  // Auditoria de seguridad 2026-08-10: MAX_INTENTOS_FALLIDOS existia pero
+  // nunca se usaba — no habia ningun bloqueo real, solo quedaba el intento
+  // registrado en el log. Ventana deslizante (no contador persistente):
+  // se cuenta cuantos LOGIN_FALLIDO tiene el usuario en los ultimos N
+  // minutos: al pasar el umbral, se bloquea el login aunque la clave sea
+  // correcta, hasta que la ventana se vacíe sola.
+  private readonly MINUTOS_VENTANA_BLOQUEO = 15;
   // Activación: 24h, para dar tiempo a que la asesora revise su correo sin
   // apurarla. Recuperación: 30 min, es una accion sensible de seguridad y
   // el usuario normalmente la hace en el momento.
@@ -35,6 +42,16 @@ export class AuthService {
 
     if (!user || !user.activo) {
       throw new UnauthorizedException('Credenciales inválidas.');
+    }
+
+    const desde = new Date(Date.now() - this.MINUTOS_VENTANA_BLOQUEO * 60_000);
+    const intentosRecientes = await this.prisma.auditLog.count({
+      where: { actorId: user.id, accion: 'LOGIN_FALLIDO', createdAt: { gte: desde } },
+    });
+    if (intentosRecientes >= this.MAX_INTENTOS_FALLIDOS) {
+      throw new UnauthorizedException(
+        `Demasiados intentos fallidos — probá de nuevo en ${this.MINUTOS_VENTANA_BLOQUEO} minutos o usá "¿Olvidaste tu contraseña?".`,
+      );
     }
 
     const passwordValida = await bcrypt.compare(password, user.passwordHash);

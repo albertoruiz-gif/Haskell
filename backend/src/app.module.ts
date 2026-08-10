@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from './config/config.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
@@ -33,6 +34,12 @@ import { RolesGuard } from './common/guards/roles.guard';
 @Module({
   imports: [
     ConfigModule,
+    // Rate limit global (auditoria de seguridad 2026-08-10): sin esto, no
+    // habia NADA que frenara fuerza bruta/scraping contra la API — ni acá
+    // ni en nginx. Limite por defecto generoso (uso normal de la app no lo
+    // toca); el login tiene su propio limite mas estricto via @Throttle,
+    // ver AuthController.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     AuthModule,
     AfiliacionModule,
     PricingModule,
@@ -54,7 +61,10 @@ import { RolesGuard } from './common/guards/roles.guard';
   ],
   controllers: [HealthController],
   providers: [
-    // Orden importa: primero autentica (JWT), despues autoriza por rol (RolesGuard).
+    // Orden importa: primero el limite de requests (asi corta flood ANTES
+    // de gastar trabajo en autenticar), despues autentica (JWT), despues
+    // autoriza por rol (RolesGuard).
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
