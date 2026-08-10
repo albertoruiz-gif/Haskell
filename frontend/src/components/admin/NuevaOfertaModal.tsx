@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
 import { ErrorBanner } from '../ui/ErrorBanner';
 import { LineaAdmin } from './EditarProductoModal';
+import { useFiltrosCatalogo } from '../../lib/useFiltrosCatalogo';
 
 const ALCANCES = ['DIA', 'SEMANA', 'MES'];
 
@@ -15,7 +16,10 @@ type Props = {
 };
 
 export function NuevaOfertaModal({ catalogoId, lineas, onClose, onCreada }: Props) {
-  const [busqueda, setBusqueda] = useState('');
+  // Buscador con el mismo criterio que el resto de la app (sinónimos
+  // champú/shampoo, sin importar tildes) — antes tenía su propio filtro
+  // ".includes()" a mano, que no manejaba ninguno de los dos casos.
+  const { busqueda, setBusqueda, filtrados } = useFiltrosCatalogo(lineas);
   const [producto, setProducto] = useState<LineaAdmin | null>(null);
   const [alcance, setAlcance] = useState(ALCANCES[0]);
   const [descuentoPct, setDescuentoPct] = useState('');
@@ -25,9 +29,7 @@ export function NuevaOfertaModal({ catalogoId, lineas, onClose, onCreada }: Prop
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const resultados = busqueda.trim()
-    ? lineas.filter((l) => `${l.nombre ?? ''} ${l.sku}`.toLowerCase().includes(busqueda.trim().toLowerCase())).slice(0, 8)
-    : [];
+  const resultados = busqueda.trim() ? filtrados.slice(0, 8) : [];
 
   async function crear(e: React.FormEvent) {
     e.preventDefault();

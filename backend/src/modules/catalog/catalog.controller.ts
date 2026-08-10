@@ -1,8 +1,10 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { OdooClient } from '../odoo/odoo.client';
+import { BuscadorCatalogo } from './buscador-catalogo';
 import { CrearLineaDto } from './dto/crear-linea.dto';
 import { ActualizarPrecioDto } from './dto/actualizar-precio.dto';
 import { ActualizarLineaDto } from './dto/actualizar-linea.dto';
@@ -23,6 +25,7 @@ export class CatalogController {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly odoo: OdooClient,
+    private readonly buscador: BuscadorCatalogo,
   ) {}
 
   // Roles que administran el catalogo pero no son asesores (sin canal
@@ -112,42 +115,16 @@ export class CatalogController {
   async catalogoVigente(@Req() req: any, @Query('busqueda') busqueda?: string) {
     const canalDelUsuario = req.user.canal; // proviene del JWT, no del querystring
 
-    // Sinonimos comerciales reales del rubro (ej. "champú"/"shampoo") — sin
-    // esto, buscar uno no encontraba el otro. Mismo criterio que ya existe
-    // del lado del cliente en useFiltrosCatalogo.ts para el Catálogo; acá
-    // hace falta también porque el buscador del Carrito pega directo a este
-    // endpoint en cada tecla, no filtra sobre una lista ya cargada.
-    // Coincidencia por prefijo (no "includes" exacto): el buscador dispara
-    // en cada tecla, así que a mitad de escribir "shampoo" el texto es
-    // "shampo", "shamp", etc. — un match exacto de la palabra completa
-    // nunca llega a dispararse mientras se escribe.
-    // "champu" (sin tilde, lo que se escribe) nunca matchea contra "Champú"
-    // (como está guardado el nombre real) porque el ILIKE de Postgres no
-    // ignora tildes — por eso el grupo incluye la forma con tilde también,
-    // no solo el sinónimo en inglés.
-    const GRUPOS_SINONIMOS = ['champu', 'champú', 'shampoo'];
-    const variantesBusqueda = (termino: string): string[] => {
-      const lower = termino.toLowerCase().trim();
-      if (lower.length < 4) return [termino];
-      const coincide = GRUPOS_SINONIMOS.some((p) => p.startsWith(lower) || lower.startsWith(p));
-      if (!coincide) return [termino];
-      return [termino, ...GRUPOS_SINONIMOS];
-    };
+    // Coincidencia de texto (tildes y sinónimos como "champú"/"shampoo")
+    // centralizada en BuscadorCatalogo — único lugar que resuelve esto
+    // contra la base en todo el backend (ver ese archivo para el porqué).
+    const idsPorTexto = busqueda ? await this.buscador.idsQueCoinciden(busqueda) : null;
 
     // Filtro de texto "puro" (sin gate de stock) — se usa tal cual en la
     // vista previa de administración, donde SÍ interesa ver todo el
     // catálogo publicado (incluso sin stock confirmado) para poder
     // gestionarlo.
-    const filtroTextual = busqueda
-      ? {
-          OR: variantesBusqueda(busqueda).flatMap((v) => [
-            { sku: { contains: v, mode: 'insensitive' as const } },
-            { nombre: { contains: v, mode: 'insensitive' as const } },
-            { categoria: { contains: v, mode: 'insensitive' as const } },
-            { linea: { contains: v, mode: 'insensitive' as const } },
-          ]),
-        }
-      : undefined;
+    const filtroTextual = idsPorTexto ? { id: { in: idsPorTexto } } : undefined;
 
     // Filtro para el catálogo del asesor (RN nueva 2026-08-10): un producto
     // sin stock físico confirmado NO debe listarse ni encontrarse por
