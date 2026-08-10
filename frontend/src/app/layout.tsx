@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Script from 'next/script';
 import './globals.css';
 import { NavTabs } from '../components/ui/NavTabs';
+import { Footer } from '../components/ui/Footer';
 import { AuthGate } from '../components/auth/AuthGate';
 import { CartProvider } from '../components/cart/CartContext';
 
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="mt-3 lg:mt-6">
               <AuthGate>{children}</AuthGate>
             </main>
+            <Footer />
           </CartProvider>
         </div>
         {livechatActivo && (

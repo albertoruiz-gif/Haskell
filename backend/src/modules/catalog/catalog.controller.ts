@@ -5,6 +5,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { OdooClient } from '../odoo/odoo.client';
 import { BuscadorCatalogo } from './buscador-catalogo';
+import { Public } from '../../common/decorators/public.decorator';
 import { CrearLineaDto } from './dto/crear-linea.dto';
 import { ActualizarPrecioDto } from './dto/actualizar-precio.dto';
 import { ActualizarLineaDto } from './dto/actualizar-linea.dto';
@@ -193,6 +194,50 @@ export class CatalogController {
     const productos = await Promise.all(catalogo.lineas.map((linea) => this.mapearLinea(linea, catalogo, ofertas)));
 
     return { canal: canalDelUsuario, catalogoId: catalogo.id, version: catalogo.version, productos };
+  }
+
+  // Vitrina pública (requisito de aprobación de Culqi, ver
+  // docs/PROMPT_culqi_requisitos_web.md) — endpoint NUEVO y separado del
+  // GET /catalogo autenticado de arriba, a propósito: no lo toca, no lo
+  // reemplaza. Sin login, sin canal, sin RolesGuard bloqueando nada (es
+  // @Public()). Nunca devuelve precioAsesor ni stock — esos son datos
+  // internos del canal de asesoras, no de cara al público.
+  @Public()
+  @Get('publico')
+  async catalogoPublico() {
+    const base = {
+      catalog: { estado: 'PUBLICADO' as const, vigenciaDesde: { lte: new Date() }, vigenciaHasta: { gte: new Date() } },
+      stockConfirmado: true, // solo productos con inventario físico real — no mostrar algo que no se puede vender de verdad
+    };
+
+    const destacados = await this.prisma.catalogLine.findMany({
+      where: { ...base, destacado: true },
+      select: { sku: true, nombre: true, descripcion: true, pvpCampania: true, imagenUrl: true, imagenesAdicionales: true },
+      orderBy: { ordenVisualizacion: 'asc' },
+      take: 12,
+    });
+
+    let productos = destacados;
+    if (productos.length < 5) {
+      const relleno = await this.prisma.catalogLine.findMany({
+        where: { ...base, destacado: false },
+        select: { sku: true, nombre: true, descripcion: true, pvpCampania: true, imagenUrl: true, imagenesAdicionales: true },
+        orderBy: { createdAt: 'desc' },
+        take: 12 - productos.length,
+      });
+      productos = [...productos, ...relleno];
+    }
+
+    return {
+      productos: productos.map((p) => ({
+        sku: p.sku,
+        nombre: p.nombre,
+        descripcion: p.descripcion,
+        pvp: Number(p.pvpCampania),
+        imagenUrl: p.imagenUrl,
+        imagenesAdicionales: p.imagenesAdicionales,
+      })),
+    };
   }
 
   // --- Administración de catálogo (precio/foto) ---

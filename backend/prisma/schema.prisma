@@ -713,3 +713,41 @@ model CatalogoDigital {
 
   @@map("catalogos_digitales")
 }
+
+// Libro de Reclamaciones (requisito legal Perú — DS 011-2011-PCM y
+// normativa asociada, independiente de Culqi: toda web que ofrezca
+// productos/servicios debe tenerlo). Autoconstruido, sin SaaS externo, ver
+// docs/PROMPT_culqi_requisitos_web.md.
+enum TipoReclamo {
+  RECLAMO // disconformidad con el producto/servicio
+  QUEJA // disconformidad con la atención — categoría legal distinta, no cosmética
+}
+
+enum EstadoReclamo {
+  RECIBIDO
+  EN_PROCESO
+  RESPONDIDO
+}
+
+model Reclamo {
+  id                        String        @id @default(cuid())
+  codigo                    String        @unique // constancia mostrada al consumidor al enviar
+  tipo                      TipoReclamo
+  consumidorNombre          String
+  consumidorTipoDocumento   String
+  consumidorNumeroDocumento String
+  consumidorDomicilio       String
+  consumidorTelefono        String
+  consumidorEmail           String
+  bienOServicioReclamado    String
+  montoReclamado            Decimal?      @db.Decimal(10, 2)
+  detalle                   String        @db.Text
+  pedidoConsumidor          String        @db.Text
+  estado                    EstadoReclamo @default(RECIBIDO)
+  respuesta                 String?       @db.Text
+  respondidoPorId           String?
+  createdAt                 DateTime      @default(now())
+  respondidoEn              DateTime?
+
+  @@map("reclamos")
+}

@@ -21,6 +21,7 @@ import { IntegracionesModule } from './modules/integraciones/integraciones.modul
 import { CatalogosDigitalesModule } from './modules/catalogos-digitales/catalogos-digitales.module';
 import { IndicadoresModule } from './modules/indicadores/indicadores.module';
 import { PremiosModule } from './modules/premios/premios.module';
+import { LibroReclamacionesModule } from './modules/libro-reclamaciones/libro-reclamaciones.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -58,6 +59,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     CatalogosDigitalesModule,
     IndicadoresModule,
     PremiosModule,
+    LibroReclamacionesModule,
   ],
   controllers: [HealthController],
   providers: [

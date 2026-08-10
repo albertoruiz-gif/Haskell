@@ -18,6 +18,7 @@ import { formatearNumeroPedido } from '../../lib/numeroPedido';
 import { useCart } from '../../components/cart/CartContext';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
 import { ResumenPremios } from '../../components/premios/ResumenPremios';
+import { AvisoLibroReclamaciones } from '../../components/ui/AvisoLibroReclamaciones';
 
 type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number; stockDisponible?: number };
 type Pedido = { id: string; numero: number; canal: string; referenciaWeb: string };
@@ -275,6 +276,8 @@ export default function CarritoPage() {
               </div>
             </div>
           </div>
+
+          <AvisoLibroReclamaciones />
 
           <ErrorBanner mensaje={error} />
 
