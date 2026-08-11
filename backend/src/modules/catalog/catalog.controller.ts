@@ -159,9 +159,14 @@ export class CatalogController {
           vigenciaDesde: { lte: new Date() },
           vigenciaHasta: { gte: new Date() },
         },
-        // Vista previa de administración: sin el gate de stockConfirmado
-        // a propósito — Gestión necesita ver/gestionar todo lo publicado.
-        include: { lineas: { where: filtroTextual, include: { packComponentes: { include: { componente: true } } } } },
+        // Acuerdo con el usuario (2026-08-11): esta pestaña "Catálogo vigente"
+        // (incluso en vista de administración) solo debe MOSTRAR productos con
+        // stock físico confirmado y precio real — igual que el catálogo del
+        // asesor (filtroBusqueda). No se borra nada de la base: para ver/editar
+        // el catálogo completo (incluidos los que faltan por completar) está
+        // Gestión → Ofertas y Packs / GET /catalogo/admin/lineas, que no tiene
+        // este gate.
+        include: { lineas: { where: filtroBusqueda, include: { packComponentes: { include: { componente: true } } } } },
         orderBy: { version: 'desc' },
       });
 
