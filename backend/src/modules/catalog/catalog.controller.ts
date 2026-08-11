@@ -222,7 +222,7 @@ export class CatalogController {
       const relleno = await this.prisma.catalogLine.findMany({
         where: { ...base, destacado: false },
         select: { sku: true, nombre: true, descripcion: true, pvpCampania: true, imagenUrl: true, imagenesAdicionales: true },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { ordenVisualizacion: 'asc' }, // CatalogLine no tiene createdAt
         take: 12 - productos.length,
       });
       productos = [...productos, ...relleno];
