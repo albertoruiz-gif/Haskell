@@ -61,7 +61,10 @@ export class SecretsService implements OnModuleInit {
       publicKey: this.get('plataforma/culqi', 'publicKey', 'CULQI_PUBLIC_KEY'),
       privateKey: this.get('plataforma/culqi', 'privateKey', 'CULQI_PRIVATE_KEY'),
       rsaId: this.get('plataforma/culqi', 'rsaId', 'CULQI_RSA_ID'),
-      rsaPublicKey: this.get('plataforma/culqi', 'rsaPublicKey', 'CULQI_RSA_PUBLIC_KEY'),
+      // El PEM se guarda en .env con "\n" literales (un archivo .env no
+      // admite bien un valor multilinea sin comillas especiales) — acá se
+      // reconstruyen los saltos de línea reales antes de usarlo.
+      rsaPublicKey: this.get('plataforma/culqi', 'rsaPublicKey', 'CULQI_RSA_PUBLIC_KEY').replace(/\\n/g, '\n'),
     };
   }
 }
