@@ -16,8 +16,10 @@ export type ProductoCompleto = {
   propiedades: string | null;
   activos: string | null;
   modoUso: string | null;
-  pvp: number;
-  precioAsesor: number;
+  // null = sin stock físico confirmado todavía (puede aparecer acá solo por
+  // búsqueda exacta de nombre/SKU) — no hay precio vigente que mostrar.
+  pvp: number | null;
+  precioAsesor: number | null;
   oferta: { descuentoPct: number | null; precioFijo: number | null; alcance: string; fin: string } | null;
   stockDisponible: number;
   imagenUrl: string | null;
@@ -110,10 +112,20 @@ export function ProductoDetalle({
                 Oferta {oferta.descuentoPct ? `-${Number(oferta.descuentoPct)}%` : 'precio especial'} · vence {new Date(oferta.fin).toLocaleDateString('es-PE')}
               </span>
             )}
-            <p className="text-sm text-bosque/50 line-through">S/ {producto.pvp.toFixed(2)}</p>
-            <p className="text-2xl font-medium text-acento">S/ {producto.precioAsesor.toFixed(2)}</p>
+            {producto.precioAsesor !== null ? (
+              <>
+                <p className="text-sm text-bosque/50 line-through">S/ {producto.pvp!.toFixed(2)}</p>
+                <p className="text-2xl font-medium text-acento">S/ {producto.precioAsesor.toFixed(2)}</p>
+              </>
+            ) : (
+              <p className="text-sm font-medium text-bosque/60">Precio no disponible</p>
+            )}
             <p className={`mt-1 text-xs ${producto.stockDisponible > 0 ? 'text-bosque/50' : 'font-medium text-red-600'}`}>
-              {producto.stockDisponible > 0 ? `${producto.stockDisponible} unidades disponibles` : 'Sin stock disponible'}
+              {producto.stockDisponible > 0
+                ? `${producto.stockDisponible} unidades disponibles`
+                : producto.precioAsesor === null
+                  ? 'Aún no disponible en Perú'
+                  : 'Sin stock disponible'}
             </p>
           </div>
 
@@ -159,9 +171,10 @@ export function ProductoDetalle({
             onAgregar();
             onClose();
           }}
-          className="mt-3 w-full rounded-pill bg-bosque py-3 text-sm font-medium text-white"
+          disabled={producto.precioAsesor === null}
+          className="mt-3 w-full rounded-pill bg-bosque py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Agregar al carrito
+          {producto.precioAsesor === null ? 'Aún no disponible' : 'Agregar al carrito'}
         </button>
       </div>
     </div>

@@ -92,8 +92,15 @@ export class CatalogController {
       propiedades: linea.propiedades,
       modoUso: linea.modoUso,
       activos: linea.activos,
-      pvp: Number(linea.pvpCampania),
-      precioAsesor: this.pricing.calcularPrecioAsesor(pvpEfectivo, porcentaje),
+      // RN 2026-08-11: un producto sin stock físico confirmado tampoco tiene
+      // precio confirmado — puede llegar acá solo por búsqueda exacta de
+      // nombre/SKU (ver filtroBusqueda). El pvpCampania que guarda la fila
+      // puede ser un estimado viejo (conversión BRL→PEN) nunca validado
+      // contra la lista de precios real, así que no se muestra como si
+      // fuera un precio vigente — se manda null y el frontend rotula
+      // "Precio no disponible" en vez de un número engañoso.
+      pvp: linea.stockConfirmado ? Number(linea.pvpCampania) : null,
+      precioAsesor: linea.stockConfirmado ? this.pricing.calcularPrecioAsesor(pvpEfectivo, porcentaje) : null,
       oferta: oferta
         ? {
             descuentoPct: oferta.descuentoPct ? Number(oferta.descuentoPct) : null,

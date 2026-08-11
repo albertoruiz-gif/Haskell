@@ -20,7 +20,10 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner';
 import { ResumenPremios } from '../../components/premios/ResumenPremios';
 import { AvisoLibroReclamaciones } from '../../components/ui/AvisoLibroReclamaciones';
 
-type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number; stockDisponible?: number };
+// precioAsesor null = sin stock físico confirmado (aparece acá solo por
+// búsqueda exacta de nombre/SKU, ver catalog.controller.ts) — no se puede
+// agregar al carrito todavía.
+type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number | null; stockDisponible?: number };
 type Pedido = { id: string; numero: number; canal: string; referenciaWeb: string };
 
 declare global {
@@ -185,14 +188,18 @@ export default function CarritoPage() {
                     {resultados.map((p) => (
                       <button
                         key={p.sku}
+                        disabled={p.precioAsesor === null}
                         onClick={() => {
+                          if (p.precioAsesor === null) return;
                           agregar({ catalogLineId: p.id, sku: p.sku, nombre: p.nombre ?? p.sku, precioUnitario: p.precioAsesor, stockDisponible: p.stockDisponible });
                           setBusqueda('');
                         }}
-                        className="flex w-full items-center justify-between rounded-card px-2 py-2 text-left text-sm hover:bg-crema"
+                        className="flex w-full items-center justify-between rounded-card px-2 py-2 text-left text-sm hover:bg-crema disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <span>{p.nombre ?? p.sku} <span className="text-xs text-bosque/50">({p.sku})</span></span>
-                        <span className="text-acento">S/ {p.precioAsesor.toFixed(2)}</span>
+                        <span className={p.precioAsesor === null ? 'text-xs text-bosque/50' : 'text-acento'}>
+                          {p.precioAsesor === null ? 'Aún no disponible en Perú' : `S/ ${p.precioAsesor.toFixed(2)}`}
+                        </span>
                       </button>
                     ))}
                   </div>

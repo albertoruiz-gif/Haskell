@@ -27,6 +27,10 @@ export default function CatalogoPage() {
   const [agregados, setAgregados] = useState<Set<string>>(new Set());
 
   function agregarConFeedback(p: ProductoCompleto) {
+    // Un producto sin stock confirmado (visible acá solo por búsqueda exacta,
+    // ver catalog.controller.ts) llega con precioAsesor null — no se puede
+    // agregar al carrito.
+    if (p.precioAsesor === null) return;
     agregar({ catalogLineId: p.id, sku: p.sku, nombre: p.nombre ?? p.sku, precioUnitario: p.precioAsesor });
     setAgregados((prev) => new Set(prev).add(p.sku));
     setTimeout(() => {
@@ -159,19 +163,30 @@ export default function CatalogoPage() {
                   )}
                   <p className="line-clamp-2 min-h-[2.5rem] font-medium">{p.nombre ?? p.sku}</p>
                   <p className="text-xs text-bosque/50">{p.sku}</p>
-                  <p className="mt-1 text-sm text-bosque/50 line-through">S/{p.pvp.toFixed(2)}</p>
-                  <p className="text-lg font-medium text-acento">S/ {p.precioAsesor.toFixed(2)}</p>
+                  {p.precioAsesor !== null ? (
+                    <>
+                      <p className="mt-1 text-sm text-bosque/50 line-through">S/{p.pvp!.toFixed(2)}</p>
+                      <p className="text-lg font-medium text-acento">S/ {p.precioAsesor.toFixed(2)}</p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-sm font-medium text-bosque/60">Precio no disponible</p>
+                  )}
                   <p className={`text-xs ${p.stockDisponible > 0 ? 'text-bosque/50' : 'font-medium text-red-600'}`}>
-                    {p.stockDisponible > 0 ? `${p.stockDisponible} unidades disponibles` : 'Sin stock'}
+                    {p.stockDisponible > 0
+                      ? `${p.stockDisponible} unidades disponibles`
+                      : p.precioAsesor === null
+                        ? 'Aún no disponible en Perú'
+                        : 'Sin stock'}
                   </p>
                 </button>
                 <button
                   onClick={() => agregarConFeedback(p)}
-                  className={`mt-2 w-full rounded-pill py-2 text-sm font-medium text-white transition-colors ${
+                  disabled={p.precioAsesor === null}
+                  className={`mt-2 w-full rounded-pill py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                     agregados.has(p.sku) ? 'bg-musgo' : 'bg-bosque'
                   }`}
                 >
-                  {agregados.has(p.sku) ? '✓ Agregado al carrito' : 'Agregar'}
+                  {p.precioAsesor === null ? 'Aún no disponible' : agregados.has(p.sku) ? '✓ Agregado al carrito' : 'Agregar'}
                 </button>
               </article>
             ))}
