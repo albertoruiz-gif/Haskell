@@ -133,7 +133,7 @@ export default function CatalogoPage() {
           <h2 className="text-sm font-medium text-bosque">{lineaNombre}</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {items.map((p) => (
-              <article key={p.sku} className="rounded-card bg-white p-3 shadow-sm">
+              <article key={p.sku} className="flex h-full flex-col rounded-card bg-white p-3 shadow-sm">
                 <div className="mb-2 flex gap-1">
                   {esVistaAdmin && (
                     <span className="inline-block rounded-pill bg-musgo/20 px-2 py-1 text-xs font-medium text-musgo-dark">{p.canal}</span>
@@ -145,7 +145,11 @@ export default function CatalogoPage() {
                     <span className="inline-block rounded-pill bg-promo px-2 py-1 text-xs font-medium text-white">Oferta</span>
                   )}
                 </div>
-                <button className="block w-full text-left" onClick={() => setSeleccionado(p)}>
+                {/* flex-1 + título con altura reservada (line-clamp-2 + min-h) para que
+                    el precio/stock arranquen siempre a la misma altura sin importar si
+                    el nombre del producto ocupa 1 o 2 líneas — evita el descuadre entre
+                    tarjetas vecinas de la misma fila. */}
+                <button className="flex flex-1 flex-col text-left" onClick={() => setSeleccionado(p)}>
                   {p.imagenUrl ? (
                     <img src={resolveAssetUrl(p.imagenUrl)} alt={p.nombre ?? p.sku} className="my-3 h-40 w-full rounded-card object-cover" />
                   ) : (
@@ -153,7 +157,7 @@ export default function CatalogoPage() {
                       foto producto
                     </div>
                   )}
-                  <p className="font-medium">{p.nombre ?? p.sku}</p>
+                  <p className="line-clamp-2 min-h-[2.5rem] font-medium">{p.nombre ?? p.sku}</p>
                   <p className="text-xs text-bosque/50">{p.sku}</p>
                   <p className="mt-1 text-sm text-bosque/50 line-through">S/{p.pvp.toFixed(2)}</p>
                   <p className="text-lg font-medium text-acento">S/ {p.precioAsesor.toFixed(2)}</p>
