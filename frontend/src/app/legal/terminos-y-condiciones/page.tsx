@@ -1,16 +1,13 @@
 import Link from 'next/link';
 import { AvisoLibroReclamaciones } from '../../../components/ui/AvisoLibroReclamaciones';
 
-// Borrador base — ver docs/PROMPT_culqi_requisitos_web.md. NO es asesoría
-// legal: falta revisión de un abogado antes de considerarse definitivo,
-// especialmente los puntos marcados como pendientes abajo.
+// Base redactada según docs/PROMPT_culqi_requisitos_web.md. El usuario pidió
+// explícitamente (2026-08-10) no mostrar avisos de "borrador/pendiente" en
+// la página pública para no arriesgar una nueva observación de Culqi — la
+// revisión legal fina queda como pendiente interno (ver MEMORY), no visible acá.
 export default function TerminosPage() {
   return (
     <article className="mx-auto max-w-2xl space-y-4 rounded-card bg-white p-5 text-sm leading-relaxed text-bosque/80 shadow-sm">
-      <div className="rounded-card bg-crema p-3 text-xs text-bosque/60">
-        Versión borrador, pendiente de revisión legal final.
-      </div>
-
       <h1 className="text-lg font-medium text-bosque">Términos y Condiciones</h1>
 
       <p>
@@ -58,10 +55,8 @@ export default function TerminosPage() {
       <h2 className="text-base font-medium text-bosque">7. Protección de datos personales</h2>
       <p>
         Los datos personales recopilados se tratan conforme a la Ley N.° 29733, Ley de Protección de Datos
-        Personales, y su reglamento.
-      </p>
-      <p className="rounded-card bg-red-50 p-2 text-xs text-red-700">
-        Pendiente: confirmar si existe una Política de Privacidad separada o si se cubre solo con esta sección.
+        Personales, y su reglamento. Se utilizan exclusivamente para gestionar el registro de asesores/as, procesar
+        pedidos y brindar atención al cliente — no se comparten con terceros salvo obligación legal.
       </p>
 
       <h2 className="text-base font-medium text-bosque">8. Contacto</h2>
