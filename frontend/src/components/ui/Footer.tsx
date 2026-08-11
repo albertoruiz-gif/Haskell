@@ -5,14 +5,12 @@ import Link from 'next/link';
 // Reclamaciones a máximo 2 clics desde cualquier página pública — al
 // vivir en el footer global, está a 1 clic desde cualquier lado.
 //
-// Nota: no se linkean íconos de redes sociales todavía — @haskell_distribuidor
-// fue confirmado como handle, pero no en qué red exacta (Instagram/Facebook/
-// TikTok) vive. Culqi solo exige que, SI hay íconos, redirijan a la cuenta
-// correcta — omitirlos hasta confirmar no incumple el requisito.
+// Red social confirmada por el usuario (2026-08-11): @Haskell_Distribuidor
+// en Instagram — https://www.instagram.com/haskell_distribuidor/
 export function Footer() {
   return (
     <footer className="mt-8 space-y-3 rounded-card bg-white p-4 text-xs text-bosque/70 shadow-sm">
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <Link href="/legal/terminos-y-condiciones" className="font-medium text-acento">
           Términos y condiciones
         </Link>
@@ -25,6 +23,20 @@ export function Footer() {
         <Link href="/contacto" className="font-medium text-acento">
           Contacto
         </Link>
+        <a
+          href="https://www.instagram.com/haskell_distribuidor/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Haskell en Instagram"
+          className="ml-auto inline-flex items-center gap-1 font-medium text-acento"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <rect x="2" y="2" width="20" height="20" rx="5" />
+            <path d="M16 11.37a4 4 0 1 1-7.914 1.174A4 4 0 0 1 16 11.37z" />
+            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+          </svg>
+          @Haskell_Distribuidor
+        </a>
       </div>
       <p>
         Juan Alberto Ruiz Díaz — RUC 10095397757 · Haskell / Haskell Cosméticos · Av. Géminis H-16, San Borja, Lima,
