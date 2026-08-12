@@ -275,33 +275,75 @@ export class OrdersService {
     return actualizado;
   }
 
-  /** RF-022/RF-036: tras el pago aprobado, confirma el pedido y lo crea en Odoo. Idempotente por referenciaWeb. */
+  /**
+   * RF-022/RF-036: tras el pago aprobado (Culqi), confirma el pedido y lo
+   * envía a Odoo. Idempotente y resumible: se puede volver a llamar en
+   * cualquier momento y solo hace lo que todavía falte.
+   *
+   * Auditoría 2026-08-12 (EP-14, bug crítico): antes, marcar el pedido como
+   * PAGADO y comprometer el stock dependía de que la sincronización con
+   * Odoo funcionara — y esa sincronización SIEMPRE fallaba, porque mandaba
+   * `odooProductId: 0` (un id que no existe) para cada línea. Como nada
+   * atrapaba ese error, la excepción se propagaba hacia arriba: el cliente
+   * quedaba cobrado de verdad por Culqi, pero el pedido nunca pasaba de
+   * PENDIENTE_PAGO en nuestra base, y su reserva de stock terminaba
+   * venciendo sola a los 30 min como si nadie hubiera pagado.
+   *
+   * Ahora: 1) confirmar el pago (marcar PAGADO + comprometer stock) NO
+   * depende de Odoo — se hace apenas Culqi aprobó, sin excepción. 2) la
+   * sincronización a Odoo se intenta aparte, con el SKU→producto real
+   * (OdooClient.buscarProductoIdPorSku, ya existía y se usa en otro lado
+   * para lo mismo); si falla (Odoo caído, SKU sin mapear, lo que sea) se
+   * registra el error pero NUNCA revierte la confirmación del pago — se
+   * puede reintentar después llamando esta misma función de nuevo.
+   */
   async confirmarPagoYEnviarAOdoo(orderId: string) {
-    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { asesor: true, items: true } });
+    let order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { asesor: true, items: true } });
 
-    if (order.estado === EstadoPedido.PAGADO && order.odooSaleOrderId) {
-      return order; // RF-020: idempotencia, no duplica
+    if (order.odooSaleOrderId) {
+      return order; // RF-020: ya sincronizado, no duplica
     }
 
-    const partnerId = await this.odoo.upsertAsesorComoPartner({
-      odooPartnerId: order.asesor.odooPartnerId,
-      nombre: order.asesor.codigo,
-      telefono: order.asesor.telefonoPrincipal,
-      dni: order.asesor.numeroDocumento,
-    });
+    // Paso 1 — innegociable: el cliente ya pagó, el pedido tiene que
+    // reflejarlo sí o sí, pase lo que pase con Odoo.
+    if (order.estado !== EstadoPedido.PAGADO) {
+      order = await this.prisma.order.update({
+        where: { id: orderId },
+        data: { estado: EstadoPedido.PAGADO },
+        include: { asesor: true, items: true },
+      });
+      await this.inventario.comprometerParaOrder(orderId);
+    }
 
-    // TODO: mapear order.items[].sku -> odooProductId real (requiere tabla de sincronizacion de productos, ver odoo.client.obtenerProductos)
-    const odooSaleOrderId = await this.odoo.crearPedidoVenta({
-      partnerId,
-      referenciaWeb: order.referenciaWeb,
-      lineas: order.items.map((i) => ({ odooProductId: 0, cantidad: i.cantidad, precioUnitario: Number(i.precioAsesorUnitario) })),
-    });
+    // Paso 2 — best-effort: si algo de esto falla, queda logueado y
+    // reintentable, pero el pago de arriba ya quedó confirmado igual.
+    try {
+      const partnerId = await this.odoo.upsertAsesorComoPartner({
+        odooPartnerId: order.asesor.odooPartnerId,
+        nombre: order.asesor.codigo,
+        telefono: order.asesor.telefonoPrincipal,
+        dni: order.asesor.numeroDocumento,
+      });
 
-    const actualizado = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { estado: EstadoPedido.PAGADO, odooSaleOrderId },
-    });
-    await this.inventario.comprometerParaOrder(orderId);
-    return actualizado;
+      const lineas = await Promise.all(
+        order.items.map(async (i) => {
+          const odooProductId = await this.odoo.buscarProductoIdPorSku(i.sku);
+          if (!odooProductId) {
+            throw new Error(`SKU ${i.sku} no tiene producto asociado en Odoo (default_code sin coincidencia).`);
+          }
+          return { odooProductId, cantidad: i.cantidad, precioUnitario: Number(i.precioAsesorUnitario) };
+        }),
+      );
+
+      const odooSaleOrderId = await this.odoo.crearPedidoVenta({ partnerId, referenciaWeb: order.referenciaWeb, lineas });
+      order = await this.prisma.order.update({ where: { id: orderId }, data: { odooSaleOrderId }, include: { asesor: true, items: true } });
+    } catch (e) {
+      // No se propaga: el pago ya está confirmado (paso 1). Esto queda para
+      // que Gestión/Odoo lo reconcilie a mano — no hay cron en este
+      // proyecto para reintentar solo.
+      console.error(`No se pudo sincronizar a Odoo el pedido ${order.referenciaWeb} (${orderId}):`, (e as Error).message);
+    }
+
+    return order;
   }
 }
