@@ -12,7 +12,9 @@ const ROLES_ADMIN = ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'];
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sesionVencida = searchParams.get('motivo') === 'sesion_vencida';
+  const motivo = searchParams.get('motivo');
+  const sesionVencida = motivo === 'sesion_vencida';
+  const passwordCambiada = motivo === 'password_cambiada';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,11 @@ export default function LoginPage() {
         {sesionVencida && (
           <p className="rounded-card bg-musgo/10 p-2 text-xs text-bosque/70">
             Tu sesión venció por seguridad — iniciá sesión de nuevo para seguir.
+          </p>
+        )}
+        {passwordCambiada && (
+          <p className="rounded-card bg-musgo/10 p-2 text-xs text-bosque/70">
+            Contraseña actualizada. Iniciá sesión con tu contraseña nueva.
           </p>
         )}
 

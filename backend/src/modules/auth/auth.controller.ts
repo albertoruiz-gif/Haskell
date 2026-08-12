@@ -67,6 +67,15 @@ export class AuthController {
     return this.authService.reactivarUsuario(id, req.user.id);
   }
 
+  // EP-01: cerrar la sesión de alguien sin desactivar la cuenta (celular
+  // perdido/robado, sospecha de acceso indebido, etc.) — la próxima vez que
+  // ese token intente usarse, JwtStrategy lo rechaza y pide loguearse de nuevo.
+  @Patch('usuarios/:id/cerrar-sesiones')
+  @Roles('ADMINISTRADOR')
+  cerrarSesiones(@Param('id') id: string, @Req() req: any) {
+    return this.authService.cerrarSesiones(id, req.user.id);
+  }
+
   @Get('usuarios')
   @Roles('ADMINISTRADOR', 'ALMACEN')
   listarPorRol(@Query('rol') rol: string) {

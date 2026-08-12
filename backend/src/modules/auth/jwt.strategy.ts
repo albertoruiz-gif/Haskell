@@ -1,11 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { jwtSecret } from './jwt-secret';
+import { PrismaService } from '../../config/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -13,7 +14,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  // Lo que retorna acá queda disponible como req.user (usado por RolesGuard y CatalogController)
+  // Lo que retorna acá queda disponible como req.user (usado por RolesGuard y CatalogController).
+  //
+  // EP-01 (auditoría 2026-08-12): antes esto confiaba ciegamente en lo que
+  // decía el token, sin volver a mirar la base — un usuario DESACTIVADO
+  // seguía pudiendo usar el sistema con su token viejo hasta que expirara
+  // solo (hasta 8h), y no existía forma de forzar un logout. Un solo
+  // SELECT por id (indexado, barato) alcanza para cerrar ambos huecos: se
+  // rechaza si el usuario ya no está activo, o si el token es de ANTES de
+  // la última vez que se invalidaron sus sesiones (cambio de clave,
+  // desactivación, o un cierre de sesión forzado desde Gestión).
   async validate(payload: {
     sub: string;
     email: string;
@@ -23,7 +33,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     transportistaId?: string | null;
     liderId?: string | null;
     gerenteComercialId?: string | null;
+    iat?: number;
   }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { activo: true, sesionesInvalidadasDesde: true },
+    });
+
+    if (!user || !user.activo) {
+      throw new UnauthorizedException('La cuenta ya no está activa.');
+    }
+    if (user.sesionesInvalidadasDesde && payload.iat && payload.iat * 1000 < user.sesionesInvalidadasDesde.getTime()) {
+      throw new UnauthorizedException('La sesión fue cerrada — iniciá sesión de nuevo.');
+    }
+
     return {
       id: payload.sub,
       email: payload.email,

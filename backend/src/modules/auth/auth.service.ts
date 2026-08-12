@@ -99,12 +99,27 @@ export class AuthService {
     });
   }
 
-  // RF-003: desactivar sin borrar historial
+  // RF-003: desactivar sin borrar historial. EP-01: además de bloquear
+  // logins nuevos, corta YA cualquier sesión que ya tuviera abierta —
+  // antes, desactivar a alguien no le hacía nada a su token vigente.
   async desactivarUsuario(userId: string, actorId: string) {
     await this.prisma.auditLog.create({
       data: { actorId, accion: 'DESACTIVAR_USUARIO', entidad: 'User', entidadId: userId },
     });
-    return this.prisma.user.update({ where: { id: userId }, data: { activo: false } });
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { activo: false, sesionesInvalidadasDesde: new Date() },
+    });
+  }
+
+  // EP-01: "cerrar sesión en todos los dispositivos" sin desactivar la
+  // cuenta — para el caso de "perdí el celular" o "me robaron la sesión",
+  // donde la persona sigue trabajando pero necesita volver a loguearse.
+  async cerrarSesiones(userId: string, actorId: string) {
+    await this.prisma.auditLog.create({
+      data: { actorId, accion: 'CERRAR_SESIONES', entidad: 'User', entidadId: userId },
+    });
+    return this.prisma.user.update({ where: { id: userId }, data: { sesionesInvalidadasDesde: new Date() } });
   }
 
   async reactivarUsuario(userId: string, actorId: string) {
@@ -198,8 +213,12 @@ export class AuthService {
     const token = await this.validarToken(tokenCrudo);
     const passwordHash = await bcrypt.hash(nuevaPassword, 12);
 
+    // EP-01: si esto es una recuperación por "olvidé mi contraseña", puede
+    // ser justamente porque alguien más tiene la cuenta comprometida con
+    // una sesión abierta — fijar la clave nueva sin cortar esa sesión
+    // vieja dejaría a quien la robó con acceso igual.
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: token.userId }, data: { passwordHash } }),
+      this.prisma.user.update({ where: { id: token.userId }, data: { passwordHash, sesionesInvalidadasDesde: new Date() } }),
       this.prisma.tokenAcceso.update({ where: { id: token.id }, data: { usadoEn: new Date() } }),
     ]);
     await this.prisma.auditLog.create({
@@ -213,17 +232,25 @@ export class AuthService {
     return { mensaje: 'Contraseña actualizada correctamente.' };
   }
 
-  /** Cambio de clave por el propio usuario logueado — exige la clave actual (distinto del reseteo por link). */
+  /**
+   * Cambio de clave por el propio usuario logueado — exige la clave actual
+   * (distinto del reseteo por link). EP-01: esto también invalida la sesión
+   * actual (incluida la que está haciendo el cambio) — el usuario tiene que
+   * volver a loguearse con la clave nueva. Es la misma convención que usan
+   * la mayoría de los sitios ("por tu seguridad, iniciá sesión de nuevo")
+   * y evita que una sesión vieja (ej. en otro dispositivo, con la clave
+   * anterior ya comprometida) siga viva después del cambio.
+   */
   async cambiarPasswordPropia(userId: string, passwordActual: string, passwordNueva: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const valida = await bcrypt.compare(passwordActual, user.passwordHash);
     if (!valida) throw new UnauthorizedException('La contraseña actual no es correcta.');
 
     const passwordHash = await bcrypt.hash(passwordNueva, 12);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash, sesionesInvalidadasDesde: new Date() } });
     await this.prisma.auditLog.create({
       data: { actorId: userId, accion: 'CAMBIAR_PASSWORD', entidad: 'User', entidadId: userId },
     });
-    return { mensaje: 'Contraseña actualizada correctamente.' };
+    return { mensaje: 'Contraseña actualizada correctamente. Volvé a iniciar sesión con tu nueva contraseña.' };
   }
 }

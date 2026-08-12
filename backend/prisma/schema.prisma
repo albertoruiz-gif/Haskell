@@ -122,6 +122,14 @@ model User {
   nombre       String
   rol          RolUsuario
   activo       Boolean    @default(true)
+  // EP-01 (auditoría 2026-08-12): el JWT es autosuficiente (RolesGuard no
+  // vuelve a la base por rol/canal) — así que revocar una sesión no puede
+  // ser "borrar el token" (no vive en ningún lado más que en el navegador).
+  // En vez de eso, JwtStrategy.validate() compara el "iat" del token contra
+  // este campo: cualquier token emitido ANTES de esta fecha deja de sevir,
+  // sin importar que todavía no haya expirado. Null = nunca se invalidó
+  // nada, todos los tokens vigentes siguen sirviendo.
+  sesionesInvalidadasDesde DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 

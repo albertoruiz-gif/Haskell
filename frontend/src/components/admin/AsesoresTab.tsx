@@ -101,6 +101,21 @@ export function AsesoresTab() {
     }
   }
 
+  // EP-01: cerrar la sesión sin desactivar la cuenta — para "perdí el
+  // celular" o sospecha de acceso indebido, cuando la persona sigue
+  // trabajando pero necesita volver a loguearse.
+  const [cerrandoId, setCerrandoId] = useState<string | null>(null);
+  async function cerrarSesiones(userId: string) {
+    setError(null);
+    try {
+      await apiFetch(`/auth/usuarios/${userId}/cerrar-sesiones`, { method: 'PATCH' });
+      setCerrandoId(userId);
+      setTimeout(() => setCerrandoId(null), 2000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cerrar la sesión.');
+    }
+  }
+
   return (
     <div className="space-y-3 lg:grid lg:grid-cols-[360px_1fr] lg:items-start lg:gap-4 lg:space-y-0">
       <form onSubmit={onSubmit} className="space-y-2 rounded-card bg-white p-3 shadow-sm">
@@ -145,12 +160,23 @@ export function AsesoresTab() {
                 {a.user.activo ? 'Activo' : 'Inactivo'}
               </span>
             </div>
-            <button
-              onClick={() => toggleActivo(a.user.id, a.user.activo)}
-              className="mt-2 w-full rounded-pill bg-crema py-2 text-xs font-medium text-acento"
-            >
-              {a.user.activo ? 'Desactivar' : 'Reactivar'}
-            </button>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => toggleActivo(a.user.id, a.user.activo)}
+                className="flex-1 rounded-pill bg-crema py-2 text-xs font-medium text-acento"
+              >
+                {a.user.activo ? 'Desactivar' : 'Reactivar'}
+              </button>
+              {a.user.activo && (
+                <button
+                  onClick={() => cerrarSesiones(a.user.id)}
+                  title="Cierra su sesión actual sin desactivar la cuenta — vuelve a pedir login."
+                  className="flex-1 rounded-pill bg-crema py-2 text-xs font-medium text-bosque"
+                >
+                  {cerrandoId === a.user.id ? '✓ Sesión cerrada' : 'Cerrar sesión'}
+                </button>
+              )}
+            </div>
           </div>
         ))}
         {asesores.length === 0 && <p className="text-xs text-bosque/50">Todavía no hay asesores.</p>}

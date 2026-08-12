@@ -1,17 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
-import { getUsuario, Usuario } from '../../lib/auth';
+import { getUsuario, clearSession, Usuario } from '../../lib/auth';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
 
 export default function MiCuentaPage() {
+  const router = useRouter();
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [passwordActual, setPasswordActual] = useState('');
   const [passwordNueva, setPasswordNueva] = useState('');
   const [confirmar, setConfirmar] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [mensaje, setMensaje] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
   useEffect(() => {
@@ -21,7 +22,6 @@ export default function MiCuentaPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setMensaje(null);
 
     if (passwordNueva.length < 8) {
       setError('La contraseña nueva debe tener al menos 8 caracteres.');
@@ -35,10 +35,12 @@ export default function MiCuentaPage() {
     setCargando(true);
     try {
       await apiFetch('/auth/mi-password', { method: 'PATCH', body: { passwordActual, passwordNueva } });
-      setMensaje('Contraseña actualizada correctamente.');
-      setPasswordActual('');
-      setPasswordNueva('');
-      setConfirmar('');
+      // EP-01: cambiar la clave cierra la sesión actual del lado del
+      // backend (a propósito, ver AuthService.cambiarPasswordPropia) — se
+      // redirige de una vez en vez de dejar que la próxima llamada a la
+      // API falle con un 401 que se sienta como un error random.
+      clearSession();
+      router.push('/login?motivo=password_cambiada');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo actualizar la contraseña.');
     } finally {
@@ -94,7 +96,6 @@ export default function MiCuentaPage() {
         </div>
 
         <ErrorBanner mensaje={error} />
-        {mensaje && <p className="rounded-card bg-musgo/10 p-2 text-xs text-bosque/70">{mensaje}</p>}
 
         <button
           type="submit"
