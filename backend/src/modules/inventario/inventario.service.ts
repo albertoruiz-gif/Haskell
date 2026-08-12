@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { EstadoLote } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
+import { ConfiguracionService } from '../configuracion/configuracion.service';
 
 const ESTADOS_VENDIBLES: EstadoLote[] = ['DISPONIBLE', 'PROXIMO_VENCER'];
 const ESTADOS_RESERVA_ACTIVA = ['RESERVADO_TEMPORAL', 'COMPROMETIDO'] as const;
@@ -12,15 +13,20 @@ const DIAS_PARA_PROXIMO_VENCER = 30;
  * este sistema) hasta la venta, devolución o baja de cada lote.
  *
  * FEFO real: reservarParaOrder toma primero el lote con fechaVencimiento
- * más próxima entre los DISPONIBLE/PROXIMO_VENCER. La reserva temporal
- * vence a los 30 min (verificación perezosa — no hay cron en este
- * proyecto, se revisa cada vez que se consulta o intenta reservar stock).
+ * más próxima entre los DISPONIBLE/PROXIMO_VENCER. La reserva temporal vence
+ * a los minutos configurados en Gestión → Configuración (default 30, ver
+ * ConfiguracionService) — verificación perezosa, no hay cron en este
+ * proyecto: se revisa cada vez que se consulta o intenta reservar stock, y
+ * también cada vez que alguien mira el catálogo (ver CatalogController), así
+ * la reserva vencida no queda mostrando "sin stock" hasta que alguien más
+ * intente comprar ese mismo producto.
  */
 @Injectable()
 export class InventarioService {
-  constructor(private readonly prisma: PrismaService) {}
-
-  private readonly MINUTOS_RESERVA = 30;
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configuracion: ConfiguracionService,
+  ) {}
 
   // ---------- Lotes ----------
 
@@ -109,6 +115,8 @@ export class InventarioService {
   async reservarParaOrder(orderId: string) {
     await this.liberarReservasVencidas();
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } });
+    const minutosReserva = await this.configuracion.minutosReservaStock();
+    const expiraEn = new Date(Date.now() + minutosReserva * 60_000);
 
     try {
       for (const item of order.items) {
@@ -122,7 +130,6 @@ export class InventarioService {
           orderBy: [{ fechaVencimiento: 'asc' }],
         });
 
-        const expiraEn = new Date(Date.now() + this.MINUTOS_RESERVA * 60_000);
         for (const lote of lotes) {
           if (pendiente <= 0) break;
           const reservadoEnLote = lote.reservas.reduce((acc, r) => acc + r.cantidad, 0);

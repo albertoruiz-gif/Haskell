@@ -14,6 +14,7 @@ import { OfertasTab } from '../../components/admin/OfertasTab';
 import { PagosTab } from '../../components/admin/PagosTab';
 import { TransporteTab } from '../../components/admin/TransporteTab';
 import { PremiosTab } from '../../components/admin/PremiosTab';
+import { ConfiguracionTab } from '../../components/admin/ConfiguracionTab';
 
 const TABS = [
   { id: 'pagos', label: 'Pagos' },
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'ofertas', label: 'Ofertas y Packs' },
   { id: 'transporte', label: 'Transporte' },
   { id: 'premios', label: 'Premios' },
+  { id: 'configuracion', label: 'Configuración' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -113,6 +115,7 @@ export default function GestionPage() {
       )}
       {tab === 'transporte' && <TransporteTab />}
       {tab === 'premios' && <PremiosTab />}
+      {tab === 'configuracion' && <ConfiguracionTab />}
     </div>
   );
 }

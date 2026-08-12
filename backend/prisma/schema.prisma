@@ -751,3 +751,20 @@ model Reclamo {
 
   @@map("reclamos")
 }
+
+// Configuración editable desde Gestión → Configuración, sin pasar por una
+// migración. Fila única (singleton, id fijo "global") — se crea sola con
+// los defaults la primera vez que se lee (ver ConfiguracionService). Pensada
+// para crecer con otros parámetros de EP-16 (tolerancia de conciliación de
+// vouchers, plantillas de correo, feature flags) sin agregar una tabla por
+// cada uno.
+model ConfiguracionSistema {
+  id                  String   @id @default("global")
+  // EP-06/EP-09: minutos que se reserva el stock de un pedido recién creado
+  // (PENDIENTE_PAGO) antes de liberarse solo — ver InventarioService.
+  minutosReservaStock Int      @default(30)
+  actualizadoPorId    String?
+  updatedAt           DateTime @updatedAt
+
+  @@map("configuracion_sistema")
+}

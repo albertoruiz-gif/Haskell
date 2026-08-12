@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { OdooClient } from '../odoo/odoo.client';
+import { InventarioService } from '../inventario/inventario.service';
 import { BuscadorCatalogo } from './buscador-catalogo';
 import { Public } from '../../common/decorators/public.decorator';
 import { CrearLineaDto } from './dto/crear-linea.dto';
@@ -27,6 +28,7 @@ export class CatalogController {
     private readonly pricing: PricingService,
     private readonly odoo: OdooClient,
     private readonly buscador: BuscadorCatalogo,
+    private readonly inventario: InventarioService,
   ) {}
 
   // Roles que administran el catalogo pero no son asesores (sin canal
@@ -121,6 +123,13 @@ export class CatalogController {
 
   @Get()
   async catalogoVigente(@Req() req: any, @Query('busqueda') busqueda?: string) {
+    // EP-06/EP-09 (2026-08-12): sin esto, una reserva vencida (nadie pagó a
+    // tiempo) solo se liberaba cuando alguien más intentaba RESERVAR ese
+    // mismo SKU — hasta entonces el catálogo seguía mostrando "sin stock"
+    // aunque ya estuviera libre otra vez. Al liberar acá también, con solo
+    // mirar el catálogo alcanza para que el número se actualice.
+    await this.inventario.liberarReservasVencidas();
+
     const canalDelUsuario = req.user.canal; // proviene del JWT, no del querystring
 
     // Coincidencia de texto (tildes y sinónimos como "champú"/"shampoo")
