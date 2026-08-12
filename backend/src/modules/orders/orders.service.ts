@@ -226,8 +226,18 @@ export class OrdersService {
    * de partida del plazo de entrega (RF-030).
    */
   async validarPagoManual(orderId: string, actorId: string) {
+    // Auditoría 2026-08-12 (EP-07): antes marcaba PAGADO sin importar el
+    // estado previo — un pedido ya PAGADO, CANCELADO_DEVUELTO o vencido se
+    // podía "re-confirmar" igual, comprometiendo stock por segunda vez.
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    if (order.estado !== EstadoPedido.PENDIENTE_PAGO) {
+      throw new BadRequestException(
+        `No se puede validar el pago: el pedido está en estado ${order.estado}, no en PENDIENTE_PAGO.`,
+      );
+    }
+
     await this.prisma.auditLog.create({
-      data: { actorId, accion: 'VALIDAR_PAGO', entidad: 'Order', entidadId: orderId },
+      data: { actorId, accion: 'VALIDAR_PAGO', entidad: 'Order', entidadId: orderId, valoresAntes: { estado: order.estado } },
     });
     // TODO RF-036: una vez con credenciales reales de Odoo, encadenar
     // confirmarPagoYEnviarAOdoo aca en vez de solo marcar PAGADO.
@@ -237,9 +247,27 @@ export class OrdersService {
     return actualizado;
   }
 
+  // Estados desde los que todavía tiene sentido "rechazar" el pedido entero
+  // (nunca se despachó nada físico). A partir de PICKING, lo que corresponde
+  // es el flujo de entrega fallida/devolución (registrarEntregaFallida en
+  // OperacionesService), no este método.
+  private readonly ESTADOS_RECHAZABLES: EstadoPedido[] = [EstadoPedido.PENDIENTE_PAGO, EstadoPedido.PAGADO];
+
   async rechazarPedido(orderId: string, actorId: string, motivo?: string) {
+    // Auditoría 2026-08-12 (EP-07): antes cancelaba el pedido sin importar
+    // el estado previo — se podía "rechazar" un pedido ya EN_RUTA o
+    // ENTREGADO, liberando stock que no correspondía y dejando el historial
+    // inconsistente con lo que realmente pasó en el almacén/reparto.
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    if (!this.ESTADOS_RECHAZABLES.includes(order.estado)) {
+      throw new BadRequestException(
+        `No se puede rechazar: el pedido está en estado ${order.estado}. ` +
+          `Si ya se despachó, usá el flujo de entrega fallida/devolución en vez de rechazar el pedido.`,
+      );
+    }
+
     await this.prisma.auditLog.create({
-      data: { actorId, accion: 'RECHAZAR_PEDIDO', entidad: 'Order', entidadId: orderId, motivo },
+      data: { actorId, accion: 'RECHAZAR_PEDIDO', entidad: 'Order', entidadId: orderId, motivo, valoresAntes: { estado: order.estado } },
     });
     const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.CANCELADO_DEVUELTO } });
     await this.inventario.liberarParaOrder(orderId);
