@@ -33,6 +33,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     transportistaId?: string | null;
     liderId?: string | null;
     gerenteComercialId?: string | null;
+    // EP-18: presente solo en el token temporal de un login con 2FA
+    // pendiente — ver ScopeGuard, que es quien realmente lo hace valer.
+    scope?: 'pendiente_2fa' | 'setup_2fa';
     iat?: number;
   }) {
     const user = await this.prisma.user.findUnique({
@@ -56,6 +59,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       transportistaId: payload.transportistaId ?? null,
       liderId: payload.liderId ?? null,
       gerenteComercialId: payload.gerenteComercialId ?? null,
+      scope: payload.scope,
     };
   }
 }

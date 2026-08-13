@@ -130,6 +130,25 @@ model User {
   // sin importar que todavía no haya expirado. Null = nunca se invalidó
   // nada, todos los tokens vigentes siguen sirviendo.
   sesionesInvalidadasDesde DateTime?
+
+  // EP-18 (2026-08-13): 2FA obligatorio para roles administrativos
+  // (ADMINISTRADOR, GERENTE_GENERAL, GERENTE_COMERCIAL, FINANZAS — ver
+  // AuthService.ROLES_2FA), con plazo de gracia. totpSecret se guarda
+  // cifrado (AES-256-GCM, ver totp-crypto.ts) — a diferencia de
+  // passwordHash, este SÍ hay que poder leerlo de vuelta para verificar el
+  // código, así que no puede ser un hash de una sola vía.
+  totpSecret       String?
+  // null = todavía no activó 2FA (puede estar en su plazo de gracia, o ya
+  // vencido — eso se decide comparando con totpGraciaHasta, no con esto).
+  totpActivadoEn   DateTime?
+  // Hasta cuándo puede seguir entrando sin 2FA todavía activo. Se fija al
+  // crear el usuario (si su rol ya requiere 2FA) o en el backfill de la
+  // migración (para las cuentas que ya existían). Un reset de 2FA por un
+  // admin (cuenta comprometida o perdió el segundo factor) NO renueva este
+  // plazo a propósito — la idea de resetear es que tenga que reconfigurar
+  // ya, no que gane otros 7 días.
+  totpGraciaHasta  DateTime?
+
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 

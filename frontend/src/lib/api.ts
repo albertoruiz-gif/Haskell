@@ -18,11 +18,18 @@ type ApiFetchOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   isFormData?: boolean;
+  // EP-18: los pasos de 2FA durante el login (generar QR, activar, verificar
+  // código) usan el tokenTemporal que devuelve /auth/login — todavía no hay
+  // una sesión completa guardada en localStorage para esos casos.
+  token?: string;
+  // Un 401 ahí es "código incorrecto", no "sesión vencida" — no corresponde
+  // que la app te mande de vuelta al login solo, el propio flujo lo maneja.
+  manejar401?: boolean;
 };
 
 export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
-  const token = getToken();
+  const token = opts.token ?? getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let body: BodyInit | undefined;
@@ -42,7 +49,7 @@ export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Pro
     // El token JWT vence a las 8h (RNF-007). Sin esto, cada pantalla que
     // llama a la API mostraba el texto crudo "Unauthorized" en vez de
     // llevar de nuevo al login — la sesión vencida parecía una pantalla rota.
-    if (res.status === 401 && typeof window !== 'undefined') {
+    if (res.status === 401 && opts.manejar401 !== false && typeof window !== 'undefined') {
       clearSession();
       if (window.location.pathname !== '/login') {
         window.location.href = '/login?motivo=sesion_vencida';

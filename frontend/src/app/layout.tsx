@@ -4,6 +4,7 @@ import './globals.css';
 import { NavTabs } from '../components/ui/NavTabs';
 import { Footer } from '../components/ui/Footer';
 import { AuthGate } from '../components/auth/AuthGate';
+import { Aviso2FA } from '../components/auth/Aviso2FA';
 import { CartProvider } from '../components/cart/CartContext';
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <CartProvider>
             <NavTabs />
             <main className="mt-3 lg:mt-6">
+              <Aviso2FA />
               <AuthGate>{children}</AuthGate>
             </main>
             <Footer />

@@ -1,9 +1,23 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { authenticator } from 'otplib';
+import * as QRCode from 'qrcode';
 import { PrismaService } from '../../config/prisma.service';
 import { OdooClient } from '../odoo/odoo.client';
+import { cifrarSecretoTotp, descifrarSecretoTotp } from './totp-crypto';
+
+type UsuarioConRelaciones = {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: string;
+  asesor: { canal: string; id: string } | null;
+  transportista: { id: string } | null;
+  lider: { id: string } | null;
+  gerenteComercial: { id: string } | null;
+};
 
 /**
  * RF-001: iniciar/cerrar sesión con credenciales individuales, intentos
@@ -33,6 +47,47 @@ export class AuthService {
   // el usuario normalmente la hace en el momento.
   private readonly MINUTOS_EXPIRACION_ACTIVACION = 60 * 24;
   private readonly MINUTOS_EXPIRACION_RECUPERACION = 30;
+
+  // EP-18 (2026-08-12): roles que ven plata/datos de todos — el resto
+  // (asesoras, almacén, transportistas...) no lo necesita para no sumarle
+  // fricción al uso diario desde el celular. Definido con el usuario.
+  private readonly ROLES_2FA = ['ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL', 'FINANZAS'];
+  private readonly DIAS_GRACIA_2FA = 7;
+  private readonly MINUTOS_TOKEN_2FA_PENDIENTE = 5; // ya tiene 2FA activo, solo falta el código
+  private readonly MINUTOS_TOKEN_2FA_SETUP = 15; // tiene que configurarlo antes de seguir
+  private readonly EMISOR_TOTP = 'Haskell';
+
+  private basePayload(user: UsuarioConRelaciones) {
+    return {
+      sub: user.id,
+      email: user.email,
+      rol: user.rol,
+      canal: user.asesor?.canal ?? null,
+      asesorId: user.asesor?.id ?? null,
+      transportistaId: user.transportista?.id ?? null,
+      liderId: user.lider?.id ?? null,
+      gerenteComercialId: user.gerenteComercial?.id ?? null,
+    };
+  }
+
+  /** Token completo (acceso normal) — el único que RolesGuard/ScopeGuard dejan pasar sin restricción. */
+  private async firmarTokenCompleto(user: UsuarioConRelaciones) {
+    const payload = this.basePayload(user);
+    await this.prisma.auditLog.create({
+      data: { actorId: user.id, accion: 'LOGIN_OK', entidad: 'User', entidadId: user.id },
+    });
+    return {
+      accessToken: this.jwt.sign(payload, { expiresIn: '8h' }), // RNF-007: expiracion por politica
+      // liderId expuesto para que el frontend arme la URL de "Mi equipo"
+      // (GET /lideres/:id/equipo) sin tener que decodificar el JWT a mano.
+      usuario: { id: user.id, nombre: user.nombre, rol: user.rol, canal: payload.canal, liderId: payload.liderId },
+    };
+  }
+
+  /** Token temporal (EP-18): solo sirve para los 1-2 endpoints de 2FA que el paso pendiente necesita — ver ScopeGuard. */
+  private firmarTokenTemporal(user: UsuarioConRelaciones, scope: 'pendiente_2fa' | 'setup_2fa', minutos: number) {
+    return this.jwt.sign({ ...this.basePayload(user), scope }, { expiresIn: `${minutos}m` });
+  }
 
   async login(email: string, password: string, ip?: string) {
     const user = await this.prisma.user.findUnique({
@@ -69,33 +124,111 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas.');
     }
 
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      rol: user.rol,
-      canal: user.asesor?.canal ?? null,
-      asesorId: user.asesor?.id ?? null,
-      transportistaId: user.transportista?.id ?? null,
-      liderId: user.lider?.id ?? null,
-      gerenteComercialId: user.gerenteComercial?.id ?? null,
-    };
+    // EP-18: la clave era correcta, pero para roles administrativos eso no
+    // alcanza — todavía falta el segundo factor (o, si nunca lo configuró
+    // y ya venció su plazo de gracia, configurarlo ya mismo).
+    if (this.ROLES_2FA.includes(user.rol)) {
+      if (user.totpActivadoEn) {
+        return {
+          requiere2fa: true,
+          nombre: user.nombre,
+          tokenTemporal: this.firmarTokenTemporal(user, 'pendiente_2fa', this.MINUTOS_TOKEN_2FA_PENDIENTE),
+        };
+      }
+      const enGracia = user.totpGraciaHasta && user.totpGraciaHasta.getTime() > Date.now();
+      if (!enGracia) {
+        return {
+          debeConfigurarAhora: true,
+          nombre: user.nombre,
+          tokenTemporal: this.firmarTokenTemporal(user, 'setup_2fa', this.MINUTOS_TOKEN_2FA_SETUP),
+        };
+      }
+      // Todavía en su plazo de gracia: entra normal, pero con el aviso para
+      // que el frontend le muestre que le queda X días para configurarlo.
+      const resultado = await this.firmarTokenCompleto(user);
+      return { ...resultado, debeConfigurar2fa: true, graciaHasta: user.totpGraciaHasta };
+    }
 
-    await this.prisma.auditLog.create({
-      data: { actorId: user.id, accion: 'LOGIN_OK', entidad: 'User', entidadId: user.id },
+    return this.firmarTokenCompleto(user);
+  }
+
+  /** EP-18: para que Mi cuenta sepa si mostrar "Activar 2FA" o "Ya está activo". */
+  async estado2FA(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { rol: true, totpActivadoEn: true } });
+    return { requerido: this.ROLES_2FA.includes(user.rol), activo: !!user.totpActivadoEn };
+  }
+
+  /** EP-18: primer paso de configuración — genera un secreto nuevo (todavía inactivo hasta confirmar con activar2FA) y su QR. */
+  async generarSecreto2FA(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const secreto = authenticator.generateSecret();
+    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: cifrarSecretoTotp(secreto) } });
+
+    const otpauthUrl = authenticator.keyuri(user.email, this.EMISOR_TOTP, secreto);
+    const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
+    // El secreto en texto plano solo se devuelve UNA vez, acá — para quien
+    // no pueda escanear el QR y necesite escribirlo a mano en su app.
+    return { secreto, qrDataUrl };
+  }
+
+  /** EP-18: confirma el código contra el secreto recién generado y activa 2FA — si venía de un login forzado, ya entrega el acceso completo. */
+  async activar2FA(userId: string, codigo: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      include: { asesor: true, transportista: true, lider: true, gerenteComercial: true },
     });
+    if (!user.totpSecret) {
+      throw new BadRequestException('Primero generá un código QR desde "Configurar 2FA".');
+    }
+    const valido = authenticator.verify({ token: codigo, secret: descifrarSecretoTotp(user.totpSecret) });
+    if (!valido) {
+      throw new UnauthorizedException('El código no es correcto — fijate que tu app tenga la hora bien sincronizada.');
+    }
 
-    return {
-      accessToken: this.jwt.sign(payload, { expiresIn: '8h' }), // RNF-007: expiracion por politica
-      // liderId expuesto para que el frontend arme la URL de "Mi equipo"
-      // (GET /lideres/:id/equipo) sin tener que decodificar el JWT a mano.
-      usuario: { id: user.id, nombre: user.nombre, rol: user.rol, canal: payload.canal, liderId: payload.liderId },
-    };
+    await this.prisma.user.update({ where: { id: userId }, data: { totpActivadoEn: new Date() } });
+    await this.prisma.auditLog.create({
+      data: { actorId: userId, accion: 'ACTIVAR_2FA', entidad: 'User', entidadId: userId },
+    });
+    return this.firmarTokenCompleto(user);
+  }
+
+  /** EP-18: segundo paso del login cuando el usuario YA tiene 2FA activo. */
+  async verificarLogin2FA(userId: string, codigo: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      include: { asesor: true, transportista: true, lider: true, gerenteComercial: true },
+    });
+    if (!user.totpSecret || !user.totpActivadoEn) {
+      throw new UnauthorizedException('Esta cuenta no tiene 2FA activo.');
+    }
+    const valido = authenticator.verify({ token: codigo, secret: descifrarSecretoTotp(user.totpSecret) });
+    if (!valido) {
+      await this.prisma.auditLog.create({
+        data: { actorId: userId, accion: '2FA_FALLIDO', entidad: 'User', entidadId: userId },
+      });
+      throw new UnauthorizedException('El código no es correcto.');
+    }
+    return this.firmarTokenCompleto(user);
+  }
+
+  /** EP-18: recuperación por un admin — "perdí el celular"/sospecha de acceso indebido. No renueva el plazo de gracia a propósito (ver comentario en schema.prisma). */
+  async resetear2FA(userId: string, actorId: string) {
+    await this.prisma.auditLog.create({
+      data: { actorId, accion: 'RESETEAR_2FA', entidad: 'User', entidadId: userId },
+    });
+    return this.prisma.user.update({ where: { id: userId }, data: { totpSecret: null, totpActivadoEn: null } });
   }
 
   async crearUsuario(data: { email: string; password: string; nombre: string; rol: string }) {
     const passwordHash = await bcrypt.hash(data.password, 12);
+    // EP-18: si el rol nuevo requiere 2FA, arranca con su plazo de gracia
+    // desde ya — así una cuenta admin creada mañana también tiene sus 7
+    // días, no le cae la obligación de golpe en el primer login.
+    const totpGraciaHasta = this.ROLES_2FA.includes(data.rol)
+      ? new Date(Date.now() + this.DIAS_GRACIA_2FA * 24 * 60 * 60 * 1000)
+      : undefined;
     return this.prisma.user.create({
-      data: { email: data.email, passwordHash, nombre: data.nombre, rol: data.rol as any },
+      data: { email: data.email, passwordHash, nombre: data.nombre, rol: data.rol as any, totpGraciaHasta },
     });
   }
 

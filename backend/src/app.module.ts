@@ -25,6 +25,7 @@ import { LibroReclamacionesModule } from './modules/libro-reclamaciones/libro-re
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { ScopeGuard } from './common/guards/scope.guard';
 
 // TODO (fuera de este scaffold, ver README "Lo que falta"):
 // - Notificaciones: el correo de activación/recuperación de clave (RF-001) ya
@@ -67,9 +68,11 @@ import { RolesGuard } from './common/guards/roles.guard';
   providers: [
     // Orden importa: primero el limite de requests (asi corta flood ANTES
     // de gastar trabajo en autenticar), despues autentica (JWT), despues
-    // autoriza por rol (RolesGuard).
+    // ScopeGuard (EP-18: corta un token temporal de 2FA antes de que
+    // llegue a nada que no sea su propio flujo), despues autoriza por rol.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: ScopeGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })

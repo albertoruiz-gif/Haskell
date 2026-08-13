@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, Length, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermiteScopeParcial } from '../../common/decorators/permite-scope-parcial.decorator';
 
 class LoginDto {
   @IsEmail()
@@ -35,6 +36,12 @@ class CambiarPasswordDto {
   @IsString()
   @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
   passwordNueva!: string;
+}
+
+class CodigoTotpDto {
+  @IsString()
+  @Length(6, 6, { message: 'El código tiene 6 dígitos.' })
+  codigo!: string;
 }
 
 @Controller('auth')
@@ -74,6 +81,47 @@ export class AuthController {
   @Roles('ADMINISTRADOR')
   cerrarSesiones(@Param('id') id: string, @Req() req: any) {
     return this.authService.cerrarSesiones(id, req.user.id);
+  }
+
+  // EP-18: reset de 2FA por un admin (perdió el celular, sospecha de acceso
+  // indebido) — deja la cuenta sin 2FA activo, forzando reconfigurar en el
+  // próximo login (no le da un plazo de gracia nuevo, ver AuthService).
+  @Patch('usuarios/:id/resetear-2fa')
+  @Roles('ADMINISTRADOR')
+  resetear2FA(@Param('id') id: string, @Req() req: any) {
+    return this.authService.resetear2FA(id, req.user.id);
+  }
+
+  @Get('2fa/estado')
+  estado2FA(@Req() req: any) {
+    return this.authService.estado2FA(req.user.id);
+  }
+
+  // EP-18: genera el QR/secreto de 2FA — accesible con sesión normal
+  // (activación voluntaria desde Mi cuenta) O con el token temporal
+  // 'setup_2fa' que entrega login() cuando ya venció el plazo de gracia
+  // (ver PermiteScopeParcial / ScopeGuard).
+  @Post('2fa/generar')
+  @PermiteScopeParcial('setup_2fa')
+  generar2FA(@Req() req: any) {
+    return this.authService.generarSecreto2FA(req.user.id);
+  }
+
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post('2fa/activar')
+  @PermiteScopeParcial('setup_2fa')
+  activar2FA(@Body() dto: CodigoTotpDto, @Req() req: any) {
+    return this.authService.activar2FA(req.user.id, dto.codigo);
+  }
+
+  // Segundo paso del login cuando la cuenta YA tiene 2FA activo — requiere
+  // el tokenTemporal que devolvió /auth/login como Bearer (NO es @Public():
+  // sigue necesitando un JWT válido, solo que de scope restringido).
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post('2fa/verificar-login')
+  @PermiteScopeParcial('pendiente_2fa')
+  verificarLogin2FA(@Body() dto: CodigoTotpDto, @Req() req: any) {
+    return this.authService.verificarLogin2FA(req.user.id, dto.codigo);
   }
 
   @Get('usuarios')

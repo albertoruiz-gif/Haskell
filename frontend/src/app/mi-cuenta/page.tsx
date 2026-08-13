@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
-import { getUsuario, clearSession, Usuario } from '../../lib/auth';
+import { getUsuario, clearSession, setAviso2FA, Usuario } from '../../lib/auth';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
+import { Configurar2FA } from '../../components/auth/Configurar2FA';
+
+type Estado2FA = { requerido: boolean; activo: boolean };
 
 export default function MiCuentaPage() {
   const router = useRouter();
@@ -15,8 +18,14 @@ export default function MiCuentaPage() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
+  const [estado2FA, setEstado2FA] = useState<Estado2FA | null>(null);
+  const [configurando2FA, setConfigurando2FA] = useState(false);
+
   useEffect(() => {
     setUsuario(getUsuario());
+    apiFetch<Estado2FA>('/auth/2fa/estado')
+      .then(setEstado2FA)
+      .catch(() => {}); // no crítico — si falla, simplemente no se muestra la sección
   }, []);
 
   async function onSubmit(e: React.FormEvent) {
@@ -58,6 +67,49 @@ export default function MiCuentaPage() {
           </p>
         )}
       </div>
+
+      {estado2FA?.requerido && (
+        <div className="space-y-3 rounded-card bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-bosque">Verificación en dos pasos (2FA)</h2>
+            <span
+              className={`rounded-pill px-3 py-1 text-xs font-medium ${
+                estado2FA.activo ? 'bg-bosque text-white' : 'bg-red-100 text-red-700'
+              }`}
+            >
+              {estado2FA.activo ? 'Activo' : 'No configurado'}
+            </span>
+          </div>
+
+          {estado2FA.activo ? (
+            <p className="text-xs text-bosque/60">
+              Tu cuenta ya pide un código además de la contraseña al iniciar sesión. Si perdiste el acceso a tu app
+              autenticadora, pedile a un administrador que reinicie tu 2FA desde Gestión → Asesores.
+            </p>
+          ) : configurando2FA ? (
+            <Configurar2FA
+              onActivado={() => {
+                setEstado2FA({ requerido: true, activo: true });
+                setConfigurando2FA(false);
+                setAviso2FA(null);
+              }}
+            />
+          ) : (
+            <>
+              <p className="text-xs text-bosque/60">
+                Tu rol requiere un segundo paso de verificación al iniciar sesión. Configuralo ahora, antes de que se
+                vuelva obligatorio.
+              </p>
+              <button
+                onClick={() => setConfigurando2FA(true)}
+                className="w-full rounded-pill bg-crema py-2 text-xs font-medium text-acento"
+              >
+                Configurar ahora
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <form onSubmit={onSubmit} className="space-y-3 rounded-card bg-white p-4 shadow-sm">
         <h2 className="text-sm font-medium text-bosque">Cambiar contraseña</h2>
