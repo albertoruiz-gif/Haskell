@@ -109,13 +109,17 @@ describe('AuthService — 2FA (EP-18)', () => {
       user: {
         findUnique: jest.fn().mockResolvedValue(usuarioEnBD),
         findUniqueOrThrow: jest.fn().mockResolvedValue(usuarioEnBD),
+        findMany: jest.fn().mockResolvedValue([usuarioEnBD]),
         update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...usuarioEnBD, ...data })),
+        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'nuevo-user', ...data })),
       },
       auditLog: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockResolvedValue({}) },
+      tokenAcceso: { create: jest.fn().mockResolvedValue({}) },
     };
     const jwt = { sign: jest.fn((payload: object) => JSON.stringify(payload)) };
-    const service = new AuthService(prisma as any, jwt as any, {} as any);
-    return { service, prisma, jwt };
+    const odoo = { enviarCorreo: jest.fn().mockResolvedValue(undefined) };
+    const service = new AuthService(prisma as any, jwt as any, odoo as any);
+    return { service, prisma, jwt, odoo };
   }
 
   describe('login()', () => {
@@ -216,6 +220,40 @@ describe('AuthService — 2FA (EP-18)', () => {
         expect.objectContaining({ data: { totpSecret: null, totpActivadoEn: null } }),
       );
       expect(prisma.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ accion: 'RESETEAR_2FA' }) }));
+    });
+  });
+
+  describe('crearUsuarioAdministrativo()', () => {
+    it('crea la cuenta con plazo de gracia de 7 días y dispara el correo de activación', async () => {
+      const { service, prisma, odoo } = crearService(usuarioBase());
+      const resultado = await service.crearUsuarioAdministrativo({ email: 'nuevo@haskell.pe', nombre: 'Nueva Gerente', rol: 'FINANZAS' });
+
+      expect(resultado.rol).toBe('FINANZAS');
+      const dataCreada = prisma.user.create.mock.calls[0][0].data;
+      expect(dataCreada.rol).toBe('FINANZAS');
+      expect(dataCreada.totpGraciaHasta.getTime()).toBeGreaterThan(Date.now());
+      expect(prisma.tokenAcceso.create).toHaveBeenCalled(); // iniciarActivacion
+      expect(odoo.enviarCorreo).toHaveBeenCalled();
+    });
+
+    it('rechaza un rol que no es administrativo (ej. ASESOR)', async () => {
+      const { service, prisma } = crearService(usuarioBase());
+      await expect(
+        service.crearUsuarioAdministrativo({ email: 'x@haskell.pe', nombre: 'X', rol: 'ASESOR' }),
+      ).rejects.toThrow();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listarUsuariosAdministrativos()', () => {
+    it('filtra solo por los roles administrativos', async () => {
+      const { service, prisma } = crearService(usuarioBase());
+      await service.listarUsuariosAdministrativos();
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { rol: { in: ['ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL', 'FINANZAS'] } },
+        }),
+      );
     });
   });
 });

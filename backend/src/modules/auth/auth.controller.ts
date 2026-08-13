@@ -44,6 +44,17 @@ class CodigoTotpDto {
   codigo!: string;
 }
 
+class CrearUsuarioAdministrativoDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  nombre!: string;
+
+  @IsString()
+  rol!: string; // validado contra ROLES_2FA en el service
+}
+
 @Controller('auth')
 @UseGuards(RolesGuard)
 export class AuthController {
@@ -128,6 +139,21 @@ export class AuthController {
   @Roles('ADMINISTRADOR', 'ALMACEN')
   listarPorRol(@Query('rol') rol: string) {
     return this.authService.listarPorRol(rol);
+  }
+
+  // EP-18: gestión de cuentas administrativas (ADMINISTRADOR/GERENTE_GENERAL/
+  // GERENTE_COMERCIAL/FINANZAS) — solo ADMINISTRADOR, a diferencia del resto
+  // de "usuarios" de arriba que también dejan entrar a ALMACEN.
+  @Get('usuarios-administrativos')
+  @Roles('ADMINISTRADOR')
+  listarUsuariosAdministrativos() {
+    return this.authService.listarUsuariosAdministrativos();
+  }
+
+  @Post('usuarios-administrativos')
+  @Roles('ADMINISTRADOR')
+  crearUsuarioAdministrativo(@Body() dto: CrearUsuarioAdministrativoDto) {
+    return this.authService.crearUsuarioAdministrativo(dto);
   }
 
   // RF-001: "olvidé mi contraseña" — sin @Roles porque el usuario todavía no tiene sesión.

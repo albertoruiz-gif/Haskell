@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../config/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { calcularGracia2FA } from '../auth/roles-2fa';
 
 /**
  * Gerente Comercial (rol GERENTE_COMERCIAL) — ya tenía permisos amplios
@@ -26,6 +27,11 @@ export class GerentesComercialesService {
         passwordHash: await bcrypt.hash(claveTemporal, 12),
         nombre: data.nombre,
         rol: 'GERENTE_COMERCIAL',
+        // EP-18 (bug encontrado 2026-08-13): este alta no pasaba por
+        // AuthService.crearUsuario(), así que nunca le asignaba plazo de
+        // gracia de 2FA — su primer login lo mandaba derecho a "configurá
+        // ahora" sin ningún aviso previo.
+        totpGraciaHasta: calcularGracia2FA('GERENTE_COMERCIAL'),
       },
     });
     await this.authService.iniciarActivacion(user.id, user.email, user.nombre);

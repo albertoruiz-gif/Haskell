@@ -7,6 +7,7 @@ import * as QRCode from 'qrcode';
 import { PrismaService } from '../../config/prisma.service';
 import { OdooClient } from '../odoo/odoo.client';
 import { cifrarSecretoTotp, descifrarSecretoTotp } from './totp-crypto';
+import { ROLES_2FA, calcularGracia2FA } from './roles-2fa';
 
 type UsuarioConRelaciones = {
   id: string;
@@ -50,9 +51,8 @@ export class AuthService {
 
   // EP-18 (2026-08-12): roles que ven plata/datos de todos — el resto
   // (asesoras, almacén, transportistas...) no lo necesita para no sumarle
-  // fricción al uso diario desde el celular. Definido con el usuario.
-  private readonly ROLES_2FA = ['ADMINISTRADOR', 'GERENTE_GENERAL', 'GERENTE_COMERCIAL', 'FINANZAS'];
-  private readonly DIAS_GRACIA_2FA = 7;
+  // fricción al uso diario desde el celular. Ver roles-2fa.ts.
+  private readonly ROLES_2FA: readonly string[] = ROLES_2FA;
   private readonly MINUTOS_TOKEN_2FA_PENDIENTE = 5; // ya tiene 2FA activo, solo falta el código
   private readonly MINUTOS_TOKEN_2FA_SETUP = 15; // tiene que configurarlo antes de seguir
   private readonly EMISOR_TOTP = 'Haskell';
@@ -221,15 +221,32 @@ export class AuthService {
 
   async crearUsuario(data: { email: string; password: string; nombre: string; rol: string }) {
     const passwordHash = await bcrypt.hash(data.password, 12);
-    // EP-18: si el rol nuevo requiere 2FA, arranca con su plazo de gracia
-    // desde ya — así una cuenta admin creada mañana también tiene sus 7
-    // días, no le cae la obligación de golpe en el primer login.
-    const totpGraciaHasta = this.ROLES_2FA.includes(data.rol)
-      ? new Date(Date.now() + this.DIAS_GRACIA_2FA * 24 * 60 * 60 * 1000)
-      : undefined;
     return this.prisma.user.create({
-      data: { email: data.email, passwordHash, nombre: data.nombre, rol: data.rol as any, totpGraciaHasta },
+      data: { email: data.email, passwordHash, nombre: data.nombre, rol: data.rol as any, totpGraciaHasta: calcularGracia2FA(data.rol) },
     });
+  }
+
+  /** Gestión de cuentas administrativas (EP-18) — ADMINISTRADOR/GERENTE_GENERAL/GERENTE_COMERCIAL/FINANZAS, las únicas que usan 2FA. */
+  async listarUsuariosAdministrativos() {
+    return this.prisma.user.findMany({
+      where: { rol: { in: this.ROLES_2FA as any[] } },
+      select: { id: true, nombre: true, email: true, rol: true, activo: true, totpActivadoEn: true, createdAt: true },
+      orderBy: [{ activo: 'desc' }, { nombre: 'asc' }],
+    });
+  }
+
+  /** Alta de una cuenta administrativa nueva — dispara el correo de activación (RF-001), igual que el resto de las altas. */
+  async crearUsuarioAdministrativo(data: { email: string; nombre: string; rol: string }) {
+    if (!this.ROLES_2FA.includes(data.rol)) {
+      throw new BadRequestException(`Rol inválido para una cuenta administrativa: ${data.rol}.`);
+    }
+    const claveTemporal = crypto.randomBytes(16).toString('hex');
+    const passwordHash = await bcrypt.hash(claveTemporal, 12);
+    const user = await this.prisma.user.create({
+      data: { email: data.email, passwordHash, nombre: data.nombre, rol: data.rol as any, totpGraciaHasta: calcularGracia2FA(data.rol) },
+    });
+    await this.iniciarActivacion(user.id, user.email, user.nombre);
+    return { id: user.id, nombre: user.nombre, email: user.email, rol: user.rol };
   }
 
   // RF-003: desactivar sin borrar historial. EP-01: además de bloquear

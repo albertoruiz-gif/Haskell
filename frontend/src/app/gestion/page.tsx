@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
+import { getUsuario } from '../../lib/auth';
 import { AsesoresTab } from '../../components/admin/AsesoresTab';
 import { CatalogoPreciosTab } from '../../components/admin/CatalogoPreciosTab';
 import { CatalogoDigitalTab } from '../../components/admin/CatalogoDigitalTab';
@@ -15,6 +16,7 @@ import { PagosTab } from '../../components/admin/PagosTab';
 import { TransporteTab } from '../../components/admin/TransporteTab';
 import { PremiosTab } from '../../components/admin/PremiosTab';
 import { ConfiguracionTab } from '../../components/admin/ConfiguracionTab';
+import { AdministracionTab } from '../../components/admin/AdministracionTab';
 
 const TABS = [
   { id: 'pagos', label: 'Pagos' },
@@ -25,6 +27,10 @@ const TABS = [
   { id: 'transporte', label: 'Transporte' },
   { id: 'premios', label: 'Premios' },
   { id: 'configuracion', label: 'Configuración' },
+  // EP-18: cuentas administrativas (2FA) — solo ADMINISTRADOR, filtrado en
+  // el render de abajo. El backend también lo exige; esto es nada más para
+  // no mostrarle a otros roles un botón que les va a devolver 403.
+  { id: 'administracion', label: 'Administración' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -34,6 +40,8 @@ type Pendientes = { pagos: number; catalogo: number; transporte: number };
 export default function GestionPage() {
   const [tab, setTab] = useState<TabId>('pagos');
   const [pendientes, setPendientes] = useState<Pendientes>({ pagos: 0, catalogo: 0, transporte: 0 });
+  const esAdministrador = getUsuario()?.rol === 'ADMINISTRADOR';
+  const tabsVisibles = TABS.filter((t) => t.id !== 'administracion' || esAdministrador);
   // Compartido entre Catálogo/Precios y Ofertas: antes cada pestaña tenía su
   // propio selector de catálogo sin relación — elegir uno en una no lo
   // dejaba elegido en la otra (ver auditoría UX).
@@ -77,7 +85,7 @@ export default function GestionPage() {
       <h1 className="text-lg font-medium text-bosque">Panel de gestión</h1>
 
       <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => {
+        {tabsVisibles.map((t) => {
           const contador = CONTADOR[t.id];
           return (
             <button
@@ -116,6 +124,7 @@ export default function GestionPage() {
       {tab === 'transporte' && <TransporteTab />}
       {tab === 'premios' && <PremiosTab />}
       {tab === 'configuracion' && <ConfiguracionTab />}
+      {tab === 'administracion' && esAdministrador && <AdministracionTab />}
     </div>
   );
 }
