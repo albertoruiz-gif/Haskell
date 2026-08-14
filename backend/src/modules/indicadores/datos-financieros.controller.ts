@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -21,6 +21,7 @@ export class DatosFinancierosController {
   guardar(@Body() dto: GuardarDatoFinancieroDto, @Req() req: any) {
     const fecha = new Date(dto.periodo);
     const periodo = new Date(fecha.getFullYear(), fecha.getMonth(), 1);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- se descarta "periodo" a propósito, ya se usa arriba normalizado
     const { periodo: _p, ...datos } = dto;
     return this.prisma.datoFinancieroMensual.upsert({
       where: { periodo },

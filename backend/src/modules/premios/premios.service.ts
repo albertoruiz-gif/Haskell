@@ -130,7 +130,7 @@ export class PremiosService {
   async historialVentas(asesorId: string) {
     const asesor = await this.prisma.asesor.findUniqueOrThrow({ where: { id: asesorId } });
     const { desde: desdeSemana } = this.rangoSemanaActual();
-    const { desde: desdeMes, hasta: ahora } = this.rangoMesActual();
+    const { desde: desdeMes } = this.rangoMesActual();
 
     const pedidos = await this.prisma.order.findMany({
       where: { asesorId, pagadoEn: { not: null }, estado: { not: 'CANCELADO_DEVUELTO' } },
