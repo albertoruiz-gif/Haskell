@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsInt, IsPositive, IsString, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsPositive, IsString, ValidateNested } from 'class-validator';
 
 class ItemPedidoDto {
   @IsString()
@@ -16,4 +16,15 @@ export class CrearPedidoDto {
   @ValidateNested({ each: true })
   @Type(() => ItemPedidoDto)
   items!: ItemPedidoDto[];
+
+  // EP-21 — solo aplica en canales SALONES_BELLEZA/RETAIL (OrdersService lo
+  // valida). En COMERCIO_MINORISTA se ignoran, el pedido siempre es
+  // CONTADO_CULQI como hasta ahora.
+  @IsOptional()
+  @IsString()
+  clienteId?: string;
+
+  @IsOptional()
+  @IsIn(['CONTADO_CULQI', 'CONTADO_DEPOSITO', 'AL_CREDITO'])
+  formaPago?: 'CONTADO_CULQI' | 'CONTADO_DEPOSITO' | 'AL_CREDITO';
 }

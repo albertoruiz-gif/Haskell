@@ -115,6 +115,40 @@ enum EstadoReserva {
   LIBERADO
 }
 
+// EP-21 — solo canales SALONES_BELLEZA y RETAIL operan a crédito (decisión
+// de negocio 2026-08-13). El "Cliente" es el cliente final del Asesor (un
+// salón de belleza o una tienda retail), no el Asesor mismo: es a quien el
+// Asesor le abre línea de crédito. En COMERCIO_MINORISTA no existe este
+// concepto — el Asesor compra para sí mismo.
+enum EstadoCliente {
+  ACTIVO
+  // Tiene deuda vencida — bloquea pedidos AL_CREDITO nuevos hasta que
+  // regularice (RN acordada: "solo contado" mientras esté en mora). No es
+  // lo mismo que "sin línea aprobada" (eso es lineaCreditoAprobada null).
+  MOROSO
+  BLOQUEADO
+}
+
+enum EstadoSolicitudCredito {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+// Cómo se cobra un pedido de canal SALONES_BELLEZA/RETAIL. Para los demás
+// canales el pedido siempre es CONTADO_CULQI (sin cambios, RF-017/018).
+enum FormaPago {
+  CONTADO_CULQI
+  CONTADO_DEPOSITO
+  AL_CREDITO
+}
+
+enum EstadoDeposito {
+  PENDIENTE_VALIDACION
+  VALIDADO
+  RECHAZADO
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -202,6 +236,7 @@ model Asesor {
   direcciones      Direccion[]
   carts            Cart[]
   pedidos          Order[]
+  clientes         Cliente[] // EP-21 — sus clientes finales en canales SALONES_BELLEZA/RETAIL
 
   createdAt        DateTime     @default(now())
 
@@ -594,6 +629,90 @@ model DatoFinancieroMensual {
   @@map("datos_financieros_mensuales")
 }
 
+// EP-21 — Cliente final del Asesor (canales SALONES_BELLEZA/RETAIL). No
+// confundir con Asesor: el Asesor es quien vende en nombre de Haskell, el
+// Cliente es a quien le vende y a quien eventualmente se le abre crédito.
+// numeroDocumento único por canal (no globalmente): el mismo RUC podría
+// aparecer en Salón y Retail si de verdad son negocios distintos del mismo
+// dueño — se decide por asesor/canal, no se fuerza unicidad global.
+model Cliente {
+  id                    String        @id @default(cuid())
+  asesorId              String
+  asesor                Asesor        @relation(fields: [asesorId], references: [id])
+  canal                 Canal
+  razonSocialONombre    String
+  tipoDocumento         String
+  numeroDocumento       String
+  telefono              String
+  email                 String?
+  direccion             String?
+  estado                EstadoCliente @default(ACTIVO)
+  // null = sin línea de crédito aprobada todavía (debe pagar CONTADO). Se
+  // completa recién cuando una SolicitudCredito de este cliente pasa a
+  // APROBADA (ver SolicitudCreditoService.aprobar).
+  lineaCreditoAprobada  Decimal?      @db.Decimal(10, 2)
+  // Suma de totalCulqi de pedidos AL_CREDITO todavía no cobrados (RegistroCobro).
+  // Se mantiene con incrementos/decrementos atómicos, no se recalcula desde
+  // cero en cada lectura (ver ClientesService).
+  saldoUtilizado        Decimal       @default(0) @db.Decimal(10, 2)
+  odooPartnerId         Int?          // res.partner en Odoo, con credit_limit nativo
+
+  solicitudesCredito    SolicitudCredito[]
+  pedidos               Order[]
+  cobros                RegistroCobro[]
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@unique([canal, numeroDocumento])
+  @@index([asesorId])
+  @@map("clientes")
+}
+
+// Flujo de aprobación de línea de crédito — SIEMPRE resuelto por
+// GERENTE_COMERCIAL (decisión de negocio 2026-08-13, sin excepción por
+// canal ni por monto). El Asesor solicita, nunca se autoaprueba.
+model SolicitudCredito {
+  id              String                  @id @default(cuid())
+  clienteId       String
+  cliente         Cliente                 @relation(fields: [clienteId], references: [id])
+  solicitadoPorId String                  // User.id del Asesor
+  lineaSolicitada Decimal                 @db.Decimal(10, 2)
+  motivo          String?                 @db.Text
+  estado          EstadoSolicitudCredito  @default(PENDIENTE)
+  revisadoPorId   String?                 // User.id del GerenteComercial que resolvió
+  lineaAprobada   Decimal?                @db.Decimal(10, 2)
+  motivoRechazo   String?                 @db.Text
+  resueltoEn      DateTime?
+
+  createdAt       DateTime                @default(now())
+
+  @@index([clienteId])
+  @@index([estado])
+  @@map("solicitudes_credito")
+}
+
+// Cobranza ligera (decisión de negocio: sin módulo de cobranzas completo).
+// Un registro por cada pago que el Cliente hace contra su deuda AL_CREDITO
+// acumulada — no está atado a un pedido puntual porque un cliente puede
+// pagar varios pedidos de una vez o parcialmente.
+model RegistroCobro {
+  id              String   @id @default(cuid())
+  clienteId       String
+  cliente         Cliente  @relation(fields: [clienteId], references: [id])
+  monto           Decimal  @db.Decimal(10, 2)
+  metodo          String   // "deposito" | "culqi" | "efectivo"
+  numeroOperacion String?
+  banco           String?
+  registradoPorId String   // User.id — Asesor o GerenteComercial
+  observaciones   String?  @db.Text
+
+  createdAt       DateTime @default(now())
+
+  @@index([clienteId])
+  @@map("registros_cobro")
+}
+
 model Cart {
   id            String     @id @default(cuid())
   asesorId      String
@@ -634,6 +753,21 @@ model Order {
   subtotalAsesor          Decimal      @db.Decimal(10, 2)
   totalCulqi              Decimal      @db.Decimal(10, 2)
   estado                  EstadoPedido @default(BORRADOR)
+
+  // EP-21 — solo se completa en canales SALONES_BELLEZA/RETAIL. Null en
+  // COMERCIO_MINORISTA (el Asesor compra para sí, no hay Cliente final).
+  clienteId               String?
+  cliente                 Cliente?     @relation(fields: [clienteId], references: [id])
+  formaPago                FormaPago    @default(CONTADO_CULQI)
+  // Solo con formaPago = CONTADO_DEPOSITO. La validación (RN acordada: el
+  // monto depositado debe coincidir con totalCulqi) la hace GERENTE_COMERCIAL
+  // o FINANZAS a mano — no hay conciliación bancaria automática todavía.
+  depositoEstado           EstadoDeposito?
+  depositoNumeroOperacion  String?
+  depositoBanco            String?
+  depositoComprobanteUrl   String?
+  depositoValidadoPorId    String?
+  depositoValidadoEn       DateTime?
   referenciaWeb            String       @unique @default(cuid()) // idempotencia RF-020, no pensado para mostrarse
   // Numero de pedido legible para la asesora (confirmacion web/email) y para
   // matchear el pedido en Odoo (stock.picking.x_pedido_externo_id) — a

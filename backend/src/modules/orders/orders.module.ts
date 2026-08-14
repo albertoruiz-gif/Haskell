@@ -6,9 +6,10 @@ import { CampaignsModule } from '../campaigns/campaigns.module';
 import { OdooModule } from '../odoo/odoo.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { OperacionesModule } from '../operaciones/operaciones.module';
+import { ClientesModule } from '../clientes/clientes.module';
 
 @Module({
-  imports: [PricingModule, CampaignsModule, OdooModule, InventarioModule, OperacionesModule],
+  imports: [PricingModule, CampaignsModule, OdooModule, InventarioModule, OperacionesModule, ClientesModule],
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

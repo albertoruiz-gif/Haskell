@@ -23,6 +23,7 @@ describe('OrdersService — guardas de estado', () => {
     };
     const operaciones = { sincronizarEstadoPedidoAOdoo: jest.fn().mockResolvedValue(undefined) };
 
+    const clientes = { liberarCredito: jest.fn().mockResolvedValue(undefined), reservarCredito: jest.fn().mockResolvedValue(undefined) };
     const service = new OrdersService(
       prisma as any,
       {} as any, // pricing — no lo usan estos dos métodos
@@ -30,8 +31,9 @@ describe('OrdersService — guardas de estado', () => {
       {} as any, // odoo
       inventario as any,
       operaciones as any,
+      clientes as any,
     );
-    return { service, prisma, inventario, operaciones };
+    return { service, prisma, inventario, operaciones, clientes };
   }
 
   describe('validarPagoManual', () => {
@@ -117,8 +119,9 @@ describe('OrdersService — confirmarPagoYEnviarAOdoo', () => {
       buscarProductoIdPorSku: jest.fn().mockImplementation((sku: string) => Promise.resolve(sku === 'HSK-0012' ? 101 : sku === 'HSK-0161' ? 102 : null)),
       crearPedidoVenta: jest.fn().mockResolvedValue(999),
     };
-    const service = new OrdersService(prisma as any, {} as any, {} as any, odoo as any, inventario as any, {} as any);
-    return { service, prisma, inventario, odoo };
+    const clientes = { liberarCredito: jest.fn().mockResolvedValue(undefined), reservarCredito: jest.fn().mockResolvedValue(undefined) };
+    const service = new OrdersService(prisma as any, {} as any, {} as any, odoo as any, inventario as any, {} as any, clientes as any);
+    return { service, prisma, inventario, odoo, clientes };
   }
 
   it('confirma el pago y compromete stock aunque Odoo no exista todavía como llamada', async () => {

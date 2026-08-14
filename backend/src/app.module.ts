@@ -23,6 +23,7 @@ import { IndicadoresModule } from './modules/indicadores/indicadores.module';
 import { PremiosModule } from './modules/premios/premios.module';
 import { LibroReclamacionesModule } from './modules/libro-reclamaciones/libro-reclamaciones.module';
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
+import { ClientesModule } from './modules/clientes/clientes.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ScopeGuard } from './common/guards/scope.guard';
@@ -63,6 +64,7 @@ import { ScopeGuard } from './common/guards/scope.guard';
     PremiosModule,
     LibroReclamacionesModule,
     ConfiguracionModule,
+    ClientesModule,
   ],
   controllers: [HealthController],
   providers: [

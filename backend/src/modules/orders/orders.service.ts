@@ -1,12 +1,17 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { EstadoPedido } from '@prisma/client';
+import { Canal, EstadoPedido, FormaPago } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { OdooClient } from '../odoo/odoo.client';
 import { InventarioService } from '../inventario/inventario.service';
 import { OperacionesService } from '../operaciones/operaciones.service';
+import { ClientesService } from '../clientes/clientes.service';
 import { calcularFechaEntregaPrometida } from '../../common/sla.util';
+
+// EP-21 — solo estos canales admiten Cliente/formaPago distinta de
+// CONTADO_CULQI. En COMERCIO_MINORISTA el Asesor compra para sí mismo.
+const CANALES_CON_CREDITO: Canal[] = ['SALONES_BELLEZA', 'RETAIL'];
 
 @Injectable()
 export class OrdersService {
@@ -17,6 +22,7 @@ export class OrdersService {
     private readonly odoo: OdooClient,
     private readonly inventario: InventarioService,
     private readonly operaciones: OperacionesService,
+    private readonly clientes: ClientesService,
   ) {}
 
   /** Reserva stock real (FEFO) para el pedido recién creado — si falta stock, el pedido queda cancelado y se rechaza. */
@@ -122,10 +128,28 @@ export class OrdersService {
    * directo la lista de items y arma el pedido igual, con la misma
    * revalidacion de precio/oferta/tarifa (RF-017, RN-038).
    */
-  async crearPedidoDesdeItems(asesorId: string, itemsSolicitados: { catalogLineId: string; cantidad: number }[]) {
+  async crearPedidoDesdeItems(
+    asesorId: string,
+    itemsSolicitados: { catalogLineId: string; cantidad: number }[],
+    opciones?: { clienteId?: string; formaPago?: FormaPago },
+  ) {
     if (itemsSolicitados.length === 0) throw new BadRequestException('El carrito está vacío.');
 
     const asesor = await this.prisma.asesor.findUniqueOrThrow({ where: { id: asesorId }, include: { direcciones: true } });
+
+    // EP-21 — validación de canal/cliente ANTES de tocar stock: falla rápido
+    // sin reservar nada si el pedido no cumple las reglas de crédito.
+    const requiereCliente = CANALES_CON_CREDITO.includes(asesor.canal);
+    const formaPago: FormaPago = requiereCliente ? (opciones?.formaPago ?? 'CONTADO_CULQI') : 'CONTADO_CULQI';
+    if (requiereCliente && formaPago !== 'CONTADO_CULQI' && !opciones?.clienteId) {
+      throw new BadRequestException('Este canal requiere seleccionar un Cliente para pagar al crédito o por depósito.');
+    }
+    if (opciones?.clienteId) {
+      const cliente = await this.prisma.cliente.findUniqueOrThrow({ where: { id: opciones.clienteId } });
+      if (cliente.asesorId !== asesorId) {
+        throw new BadRequestException('Este cliente no te pertenece.');
+      }
+    }
     const direccion = asesor.direcciones.find((d) => d.predeterminada) ?? asesor.direcciones[0];
     if (!direccion) throw new BadRequestException('El asesor no tiene una dirección de entrega registrada.');
 
@@ -182,6 +206,13 @@ export class OrdersService {
       Number(tarifa.precio),
     );
 
+    // EP-21 — para AL_CREDITO, reservar el cupo ANTES de crear el pedido: si
+    // no hay línea/cupo suficiente, falla rápido sin dejar un pedido a medio
+    // armar ni tocar stock. Se libera en rechazarPedido si no prospera.
+    if (formaPago === 'AL_CREDITO') {
+      await this.clientes.reservarCredito(opciones!.clienteId!, totalCulqi);
+    }
+
     const order = await this.prisma.order.create({
       data: {
         asesorId: asesor.id,
@@ -195,11 +226,40 @@ export class OrdersService {
         subtotalAsesor: items.reduce((acc, i) => acc + i.precioAsesorUnitario * i.cantidad, 0),
         totalCulqi,
         estado: EstadoPedido.PENDIENTE_PAGO,
+        clienteId: opciones?.clienteId,
+        formaPago,
+        depositoEstado: formaPago === 'CONTADO_DEPOSITO' ? 'PENDIENTE_VALIDACION' : undefined,
         items: { create: items },
       },
       include: { items: true },
     });
-    await this.reservarOCancelar(order.id);
+    try {
+      await this.reservarOCancelar(order.id);
+    } catch (e) {
+      // Si no había stock, el pedido ya quedó CANCELADO_DEVUELTO (reservarOCancelar)
+      // — hay que devolver el cupo de crédito reservado arriba, si correspondía.
+      if (formaPago === 'AL_CREDITO') {
+        await this.clientes.liberarCredito(opciones!.clienteId!, totalCulqi);
+      }
+      throw e;
+    }
+
+    // AL_CREDITO no pasa por Culqi ni por validación manual — el crédito ya
+    // se comprometió arriba, así que el pedido queda confirmado de una vez
+    // (mismo efecto que validarPagoManual, sin la revisión humana previa
+    // porque quien autoriza el crédito ya fue GERENTE_COMERCIAL al aprobar
+    // la línea, no en cada pedido puntual).
+    if (formaPago === 'AL_CREDITO') {
+      const pagado = await this.prisma.order.update({
+        where: { id: order.id },
+        data: { estado: EstadoPedido.PAGADO, pagadoEn: new Date() },
+        include: { items: true },
+      });
+      await this.inventario.comprometerParaOrder(order.id);
+      await this.operaciones.sincronizarEstadoPedidoAOdoo(order.id);
+      return pagado;
+    }
+
     return order;
   }
 
@@ -216,6 +276,67 @@ export class OrdersService {
       ...p,
       fechaEntregaPrometida: p.pagadoEn ? calcularFechaEntregaPrometida(p.pagadoEn) : null,
     }));
+  }
+
+  /**
+   * EP-21 — el Asesor carga el número de operación/banco una vez que su
+   * Cliente ya hizo el depósito (dato que no existe al crear el pedido,
+   * porque el depósito pasa fuera de la plataforma). No cambia el estado
+   * del pedido todavía — solo deja el comprobante listo para que
+   * GERENTE_COMERCIAL/FINANZAS lo valide con validarDeposito.
+   */
+  async registrarDeposito(orderId: string, data: { numeroOperacion: string; banco: string; comprobanteUrl?: string }) {
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    if (order.formaPago !== FormaPago.CONTADO_DEPOSITO) {
+      throw new BadRequestException('Este pedido no es de pago por depósito.');
+    }
+    if (order.estado !== EstadoPedido.PENDIENTE_PAGO) {
+      throw new BadRequestException(`No se puede registrar el depósito: el pedido está en estado ${order.estado}.`);
+    }
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        depositoNumeroOperacion: data.numeroOperacion,
+        depositoBanco: data.banco,
+        depositoComprobanteUrl: data.comprobanteUrl,
+        depositoEstado: 'PENDIENTE_VALIDACION',
+      },
+    });
+  }
+
+  /**
+   * EP-21 — confirmación humana (GERENTE_COMERCIAL/FINANZAS) de que el
+   * depósito declarado por el Asesor realmente llegó — mismo criterio de
+   * "no hay conciliación bancaria automática" que validarPagoManual (RF-018).
+   */
+  async validarDeposito(orderId: string, actorId: string) {
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    if (order.formaPago !== FormaPago.CONTADO_DEPOSITO) {
+      throw new BadRequestException('Este pedido no es de pago por depósito.');
+    }
+    if (order.estado !== EstadoPedido.PENDIENTE_PAGO) {
+      throw new BadRequestException(`No se puede validar: el pedido está en estado ${order.estado}.`);
+    }
+    if (!order.depositoNumeroOperacion) {
+      throw new BadRequestException('Todavía no se registró el número de operación del depósito (RN EP-21).');
+    }
+
+    await this.prisma.auditLog.create({
+      data: { actorId, accion: 'VALIDAR_DEPOSITO', entidad: 'Order', entidadId: orderId, valoresAntes: { estado: order.estado } },
+    });
+    const actualizado = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        estado: EstadoPedido.PAGADO,
+        pagadoEn: new Date(),
+        depositoEstado: 'VALIDADO',
+        depositoValidadoPorId: actorId,
+        depositoValidadoEn: new Date(),
+      },
+    });
+    await this.inventario.comprometerParaOrder(orderId);
+    await this.operaciones.sincronizarEstadoPedidoAOdoo(orderId);
+    return actualizado;
   }
 
   /**
@@ -271,6 +392,13 @@ export class OrdersService {
     });
     const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.CANCELADO_DEVUELTO } });
     await this.inventario.liberarParaOrder(orderId);
+    // EP-21 — si era AL_CREDITO, ese cupo ya se había comprometido contra la
+    // línea del cliente al crear el pedido (crearPedidoDesdeItems); al
+    // rechazarlo hay que devolverlo, si no el cliente queda con cupo
+    // "fantasma" ocupado por un pedido que nunca se concretó.
+    if (order.formaPago === 'AL_CREDITO' && order.clienteId) {
+      await this.clientes.liberarCredito(order.clienteId, Number(order.totalCulqi));
+    }
     await this.operaciones.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizado;
   }

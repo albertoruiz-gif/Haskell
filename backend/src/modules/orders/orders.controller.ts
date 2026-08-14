@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { EstadoPedido } from '@prisma/client';
-import { IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -12,6 +12,20 @@ class RechazarPedidoDto {
   motivo?: string;
 }
 
+class RegistrarDepositoDto {
+  @IsString()
+  @IsNotEmpty()
+  numeroOperacion!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  banco!: string;
+
+  @IsOptional()
+  @IsString()
+  comprobanteUrl?: string;
+}
+
 @Controller('orders')
 @UseGuards(RolesGuard)
 export class OrdersController {
@@ -21,7 +35,10 @@ export class OrdersController {
   // falta @Roles, el asesorId sale del JWT, no del body.
   @Post()
   crear(@Body() dto: CrearPedidoDto, @Req() req: any) {
-    return this.orders.crearPedidoDesdeItems(req.user.asesorId, dto.items);
+    return this.orders.crearPedidoDesdeItems(req.user.asesorId, dto.items, {
+      clienteId: dto.clienteId,
+      formaPago: dto.formaPago,
+    });
   }
 
   @Get()
@@ -34,6 +51,20 @@ export class OrdersController {
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
   validarPago(@Param('id') id: string, @Req() req: any) {
     return this.orders.validarPagoManual(id, req.user.id);
+  }
+
+  // EP-21 — el Asesor carga el comprobante una vez que su Cliente depositó
+  // (dato que no existe todavía al crear el pedido).
+  @Patch(':id/deposito')
+  @Roles('ASESOR')
+  registrarDeposito(@Param('id') id: string, @Body() dto: RegistrarDepositoDto) {
+    return this.orders.registrarDeposito(id, dto);
+  }
+
+  @Patch(':id/deposito/validar')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS')
+  validarDeposito(@Param('id') id: string, @Req() req: any) {
+    return this.orders.validarDeposito(id, req.user.id);
   }
 
   @Patch(':id/rechazar')
