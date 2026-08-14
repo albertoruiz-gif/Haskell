@@ -13,9 +13,12 @@
 **Patrón que funciona:**
 ```
 git pull → docker compose build backend frontend → docker compose up -d backend frontend
-→ docker compose exec backend npx prisma migrate deploy → docker compose restart nginx → curl de verificación
+→ docker compose exec backend node node_modules/prisma/build/index.js migrate deploy
+→ docker compose restart nginx → curl de verificación
 ```
 `nginx` necesita reiniciarse siempre después de reconstruir un contenedor porque cachea la resolución DNS interna de Docker — si no, sigue apuntando al contenedor viejo.
+
+> **2026-08-13 — cambio de `npx prisma migrate deploy` a invocación directa.** El Trivy `image scan` del job `build-and-scan-imagen` (CI/CD) marcaba HIGH/CRITICAL en las dependencias internas del npm global embebido en `node:20-alpine` (tar, glob, minimatch, brace-expansion, ip-address, picomatch, tmp...). Actualizar npm (`npm install -g npm@latest`) no sirvió: la versión `latest` (12.x) requiere Node ≥22 y el runtime usa Node 20 (`EBADENGINE`); fijar `npm@11` sí compiló pero igual dejó HIGH residuales, porque npm libera parches de sus propias dependencias internas con retraso frente a los CVEs publicados — el hallazgo iba a seguir reapareciendo con cada CVE nuevo hasta el próximo release de npm. La solución de raíz fue **borrar npm/npx/corepack del stage final** del Dockerfile y dejar de depender de `npx` en el despliegue: el paquete `prisma` ya viaja en `node_modules` (se instala como dependencia del backend), así que `node node_modules/prisma/build/index.js migrate deploy` corre la migración usando solo el runtime de Node, sin necesitar npm global en la imagen. Aplica igual para cualquier otro cliente con este mismo patrón de Dockerfile multi-stage sobre `node:*-alpine`.
 
 ### Dificultades encontradas y cómo se resolvieron
 

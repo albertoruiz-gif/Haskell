@@ -12,6 +12,16 @@ COPY . .
 RUN npm run build
 
 FROM node:20-alpine AS runtime
+# Igual que en backend/Dockerfile: parches de SO (openssl/libcrypto3 vía
+# apk upgrade) y elimina el npm/npx global embebido, cuyas dependencias
+# internas (tar, glob, minimatch, brace-expansion...) traían CVEs
+# HIGH/CRITICAL en el escaneo de Trivy. El frontend en runtime no invoca
+# npm/npx para nada (`CMD ["node", "server.js"]` standalone de Next.js), así
+# que a diferencia del backend no hace falta reemplazarlo por nada: se borra
+# sin más.
+RUN apk update && apk upgrade --no-cache \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
