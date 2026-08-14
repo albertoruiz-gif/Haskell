@@ -174,7 +174,7 @@ AWS rechazó el aumento de límite dos veces, sin explicar criterios específico
 | Dominio propio de correo en Odoo (SPF/DKIM para `haskell.com.pe`) | Abierto | No se encontró la pantalla correcta en Odoo; falta confirmar si realmente hace falta (revisar cabeceras de un correo real primero) |
 | Culqi — cifrado RSA/AES del token de pago | Sin implementar | No se pudo confirmar en la documentación de Culqi si es obligatorio |
 | Culqi — llaves de producción (live) | Pendiente | El usuario debe generarlas en su panel cuando esté listo para cobrar de verdad |
-| Culqi — usuario/clave de prueba para el revisor | Pendiente | Acción del usuario, no técnica |
+| Culqi — usuario/clave de prueba para el revisor | **Resuelto 2026-08-14** | Se reutilizó una cuenta de Asesor demo ya existente en Testeo (canal RETAIL, con dirección y tarifa activas — llega hasta el checkout de Culqi sin tocar EP-21 porque CONTADO_CULQI sigue siendo el default sin exigir Cliente), se le fijó una contraseña conocida vía hash bcrypt generado con el propio `bcrypt` del backend, y se verificó con un login real contra la API. Esto SÍ era una acción técnica que se podía hacer sin depender del usuario — la categoría anterior ("acción del usuario") estaba mal puesta. |
 | EP-13 (boleta/factura electrónica) | Bloqueado | Falta elegir proveedor de comprobante electrónico (CPE) |
 | EP-19 (cobertura de tests) | Arrancado, incompleto | Se agregaron tests junto a cada fix crítico (46 al momento de este documento) — falta cobertura del resto del sistema |
 | EP-21 (clientes/crédito), EP-17 (notificaciones proactivas) | Sin empezar | Requieren definición de negocio antes de programar |
