@@ -22,6 +22,12 @@ temp-*.txt
 # Archivos subidos en desarrollo (fotos de producto, etc.)
 backend/uploads/
 
+# Adjunto de datos crudos, excluido a propósito por CONSTITUTION.md sección 5
+# ("Nunca incluir en un commit... salvo pedido explícito") — se conserva en
+# el disco local, no se versiona porque son 11 MB de imágenes/borrador sin
+# uso actual en el código.
+"catalogo_haskell_digital_editable (1).zip"
+
 # Logs
 npm-debug.log*
 *.log
