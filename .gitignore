@@ -26,7 +26,7 @@ backend/uploads/
 # ("Nunca incluir en un commit... salvo pedido explícito") — se conserva en
 # el disco local, no se versiona porque son 11 MB de imágenes/borrador sin
 # uso actual en el código.
-"catalogo_haskell_digital_editable (1).zip"
+catalogo_haskell_digital_editable (1).zip
 
 # Logs
 npm-debug.log*
