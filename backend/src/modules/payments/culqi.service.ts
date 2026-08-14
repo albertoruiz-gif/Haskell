@@ -3,6 +3,7 @@ import axios from 'axios';
 import { PrismaService } from '../../config/prisma.service';
 import { SecretsService } from '../../config/secrets.service';
 import { OrdersService } from '../orders/orders.service';
+import { cifrarPayloadCulqi } from './culqi-crypto';
 
 /**
  * Culqi Checkout Custom + Yape (RF-018 a RF-021).
@@ -42,23 +43,33 @@ export class CulqiService {
     if (pagoPrevio) return pagoPrevio;
 
     const { privateKey } = this.secrets.culqi();
-    // NOTA: no se implementó el cifrado RSA/AES de "Llaves RSA" — no se pudo
-    // confirmar contra la doc de Culqi que /v2/charges con un source_id ya
-    // tokenizado lo exija (aplicaría según Culqi solo a "ciertos endpoints").
-    // Si Culqi rechaza el cargo con un error de cifrado/firma, hay que
-    // retomar esto siguiendo su ejemplo AES-256-GCM + RSA-OAEP-SHA256 +
-    // header x-culqi-rsa-id (CULQI_RSA_ID/CULQI_RSA_PUBLIC_KEY ya están en
-    // secrets.service.ts, sin usar todavía).
+    const payload = { amount: montoCentimos, currency_code: 'PEN', email: order.asesor.user.email, source_id: culqiToken };
+
+    // Cifrado RSA/AES de "Llaves RSA" (docs.culqi.com/es/documentacion/pagos-online/llaves_rsa) —
+    // implementado en culqi-crypto.ts (AES-256-GCM + RSA-OAEP-SHA256, verificado
+    // con round-trip en culqi-crypto.spec.ts), pero DESACTIVADO por defecto
+    // (CULQI_CIFRADO_ACTIVO=true para prenderlo): la doc de Culqi dice que el
+    // cifrado solo aplica a los endpoints que se eligieron al crear la llave
+    // RSA en el dashboard, y no hay forma de confirmar desde acá si /v2/charges
+    // con un source_id ya tokenizado quedó incluido — activarlo a ciegas podría
+    // rechazar cobros reales si Culqi no espera un payload cifrado en este
+    // endpoint. Antes de activarlo: confirmar en el dashboard de Culqi
+    // (Desarrollo → RSA Keys) qué endpoints protege esta llave.
+    const cifradoActivo = process.env.CULQI_CIFRADO_ACTIVO === 'true';
+    const headers: Record<string, string> = { Authorization: `Bearer ${privateKey}` };
+    let body: unknown = payload;
+    if (cifradoActivo) {
+      const { rsaId, rsaPublicKey } = this.secrets.culqi();
+      body = cifrarPayloadCulqi(payload, rsaPublicKey);
+      headers['x-culqi-rsa-id'] = rsaId;
+    }
+
     // Culqi devuelve 4xx (no 200) cuando el cargo es rechazado por el banco/
     // Yape — se captura para guardar un Payment "rechazado" con el motivo
     // real en vez de un 500 crudo (el frontend necesita merchant_message).
     let data: any;
     try {
-      const res = await axios.post(
-        'https://api.culqi.com/v2/charges',
-        { amount: montoCentimos, currency_code: 'PEN', email: order.asesor.user.email, source_id: culqiToken },
-        { headers: { Authorization: `Bearer ${privateKey}` } },
-      );
+      const res = await axios.post('https://api.culqi.com/v2/charges', body, { headers });
       data = res.data;
     } catch (err: any) {
       if (!err.response) throw err; // error de red real, no un rechazo de Culqi
