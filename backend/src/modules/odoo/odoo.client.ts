@@ -140,6 +140,39 @@ export class OdooClient {
     return this.create('res.partner', values);
   }
 
+  /**
+   * EP-21 — Web -> Odoo: crea/actualiza el contacto del Cliente final del
+   * Asesor (res.partner), reflejando la línea de crédito aprobada en el
+   * campo nativo `credit_limit` de Odoo (visible/reportable ahí sin
+   * depender de esta plataforma, igual criterio que ofertas/pricelist —
+   * ver PROMPT_trasladar_ofertas_a_odoo.md). `credit_limit` en 0 cuando
+   * todavía no tiene línea aprobada (Odoo no acepta null ahí).
+   */
+  async upsertClienteComoPartner(cliente: {
+    odooPartnerId?: number | null;
+    razonSocialONombre: string;
+    numeroDocumento: string;
+    telefono: string;
+    email?: string | null;
+    direccion?: string | null;
+    lineaCreditoAprobada?: number | null;
+  }) {
+    const values = {
+      name: cliente.razonSocialONombre,
+      vat: cliente.numeroDocumento,
+      phone: cliente.telefono,
+      email: cliente.email ?? undefined,
+      street: cliente.direccion ?? undefined,
+      customer_rank: 1,
+      credit_limit: cliente.lineaCreditoAprobada ?? 0,
+    };
+    if (cliente.odooPartnerId) {
+      await this.write('res.partner', [cliente.odooPartnerId], values);
+      return cliente.odooPartnerId;
+    }
+    return this.create('res.partner', values);
+  }
+
   /** Web -> Odoo: crea el pedido de venta tras el pago aprobado (RF-036) */
   async crearPedidoVenta(params: {
     partnerId: number;

@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Canal, EstadoCliente, EstadoSolicitudCredito } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
+import { OdooClient } from '../odoo/odoo.client';
 
 /**
  * EP-21 — Clientes y línea de crédito (canales SALONES_BELLEZA/RETAIL).
@@ -23,7 +24,12 @@ import { PrismaService } from '../../config/prisma.service';
  */
 @Injectable()
 export class ClientesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ClientesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly odoo: OdooClient,
+  ) {}
 
   private readonly CANALES_CON_CREDITO: Canal[] = ['SALONES_BELLEZA', 'RETAIL'];
 
@@ -35,13 +41,51 @@ export class ClientesService {
     }
   }
 
+  /**
+   * Sincroniza el Cliente a res.partner en Odoo — a propósito NUNCA revierte
+   * ni bloquea la operación local si Odoo falla (mismo criterio que
+   * OrdersService.confirmarPagoYEnviarAOdoo, EP-14): el negocio no puede
+   * depender de que Odoo esté arriba para dar de alta un cliente o aprobar
+   * un crédito. Se registra el error y se reintenta en la próxima
+   * sincronización (ej. la siguiente vez que se actualice este cliente).
+   */
+  private async sincronizarConOdoo(cliente: {
+    id: string;
+    odooPartnerId: number | null;
+    razonSocialONombre: string;
+    numeroDocumento: string;
+    telefono: string;
+    email: string | null;
+    direccion: string | null;
+    lineaCreditoAprobada: unknown;
+  }) {
+    try {
+      const odooPartnerId = await this.odoo.upsertClienteComoPartner({
+        odooPartnerId: cliente.odooPartnerId,
+        razonSocialONombre: cliente.razonSocialONombre,
+        numeroDocumento: cliente.numeroDocumento,
+        telefono: cliente.telefono,
+        email: cliente.email,
+        direccion: cliente.direccion,
+        lineaCreditoAprobada: cliente.lineaCreditoAprobada != null ? Number(cliente.lineaCreditoAprobada) : null,
+      });
+      if (!cliente.odooPartnerId) {
+        await this.prisma.cliente.update({ where: { id: cliente.id }, data: { odooPartnerId } });
+      }
+    } catch (e) {
+      this.logger.error(`No se pudo sincronizar a Odoo el cliente ${cliente.id}: ${(e as Error).message}`);
+    }
+  }
+
   async crear(asesorId: string, data: { razonSocialONombre: string; tipoDocumento: string; numeroDocumento: string; telefono: string; email?: string; direccion?: string }) {
     const asesor = await this.prisma.asesor.findUniqueOrThrow({ where: { id: asesorId } });
     this.validarCanalConCredito(asesor.canal);
 
-    return this.prisma.cliente.create({
+    const cliente = await this.prisma.cliente.create({
       data: { asesorId, canal: asesor.canal, ...data },
     });
+    await this.sincronizarConOdoo(cliente);
+    return cliente;
   }
 
   async listar(filtro: { asesorId?: string }) {
@@ -102,6 +146,7 @@ export class ClientesService {
         data: { lineaCreditoAprobada: lineaAprobada, estado: EstadoCliente.ACTIVO },
       }),
     ]);
+    await this.sincronizarConOdoo(cliente);
     return cliente;
   }
 

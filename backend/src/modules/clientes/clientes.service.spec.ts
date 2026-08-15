@@ -22,7 +22,8 @@ describe('ClientesService', () => {
       $transaction: jest.fn(),
       ...overrides,
     };
-    return { service: new ClientesService(prisma), prisma };
+    const odoo: any = { upsertClienteComoPartner: jest.fn().mockResolvedValue(555) };
+    return { service: new ClientesService(prisma, odoo), prisma, odoo };
   }
 
   describe('crear', () => {
@@ -39,12 +40,39 @@ describe('ClientesService', () => {
     it('permite crear un Cliente para un Asesor de SALONES_BELLEZA', async () => {
       const { service, prisma } = crearService();
       prisma.asesor.findUniqueOrThrow.mockResolvedValue({ id: 'a1', canal: 'SALONES_BELLEZA' });
-      prisma.cliente.create.mockResolvedValue({ id: 'c1' });
+      prisma.cliente.create.mockResolvedValue({ id: 'c1', odooPartnerId: null, razonSocialONombre: 'Salón Y', numeroDocumento: '456', telefono: '999', email: null, direccion: null, lineaCreditoAprobada: null });
 
       await service.crear('a1', { razonSocialONombre: 'Salón Y', tipoDocumento: 'DNI', numeroDocumento: '456', telefono: '999' });
       expect(prisma.cliente.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ asesorId: 'a1', canal: 'SALONES_BELLEZA' }) }),
       );
+    });
+
+    it('sincroniza el cliente nuevo a Odoo (res.partner) y guarda el odooPartnerId devuelto', async () => {
+      const { service, prisma, odoo } = crearService();
+      prisma.asesor.findUniqueOrThrow.mockResolvedValue({ id: 'a1', canal: 'RETAIL' });
+      prisma.cliente.create.mockResolvedValue({
+        id: 'c1', odooPartnerId: null, razonSocialONombre: 'Salón Y', numeroDocumento: '456', telefono: '999', email: null, direccion: null, lineaCreditoAprobada: null,
+      });
+
+      await service.crear('a1', { razonSocialONombre: 'Salón Y', tipoDocumento: 'DNI', numeroDocumento: '456', telefono: '999' });
+
+      expect(odoo.upsertClienteComoPartner).toHaveBeenCalledWith(
+        expect.objectContaining({ odooPartnerId: null, razonSocialONombre: 'Salón Y', numeroDocumento: '456', lineaCreditoAprobada: null }),
+      );
+      expect(prisma.cliente.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { odooPartnerId: 555 } });
+    });
+
+    it('si Odoo falla al sincronizar, igual devuelve el Cliente creado (no revierte ni tira error)', async () => {
+      const { service, prisma, odoo } = crearService();
+      prisma.asesor.findUniqueOrThrow.mockResolvedValue({ id: 'a1', canal: 'RETAIL' });
+      prisma.cliente.create.mockResolvedValue({
+        id: 'c1', odooPartnerId: null, razonSocialONombre: 'Salón Y', numeroDocumento: '456', telefono: '999', email: null, direccion: null, lineaCreditoAprobada: null,
+      });
+      odoo.upsertClienteComoPartner.mockRejectedValue(new Error('Odoo caído'));
+
+      const cliente = await service.crear('a1', { razonSocialONombre: 'Salón Y', tipoDocumento: 'DNI', numeroDocumento: '456', telefono: '999' });
+      expect(cliente.id).toBe('c1');
     });
   });
 
