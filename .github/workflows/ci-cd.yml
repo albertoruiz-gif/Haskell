@@ -38,9 +38,19 @@ jobs:
         working-directory: ${{ matrix.app }}
       - run: npm run build
         working-directory: ${{ matrix.app }}
+      # JWT_SECRET/TOTP_ENCRYPTION_KEY: jwtSecret()/totpSecretKey() son fail-closed
+      # a proposito (auditoria de seguridad 2026-08-10/13 — ver jwt-secret.ts,
+      # totp-crypto.ts) y tiran si la variable falta, aunque el test no firme
+      # tokens de verdad. Valores fijos de solo-CI (no son secretos reales, no
+      # se usan contra ningun sistema real) — asi el job deja de fallar por
+      # esto en cada push, cosa que nunca se habia notado porque en local
+      # siempre existe backend/.env con estos valores.
       - if: matrix.app == 'backend'
         run: npm test
         working-directory: backend
+        env:
+          JWT_SECRET: solo-para-ci-nunca-usar-en-testeo-o-produccion
+          TOTP_ENCRYPTION_KEY: solo-para-ci-nunca-usar-en-testeo-o-produccion
 
   sast:
     runs-on: ubuntu-latest
