@@ -27,4 +27,9 @@ export class CrearPedidoDto {
   @IsOptional()
   @IsIn(['CONTADO_CULQI', 'CONTADO_DEPOSITO', 'AL_CREDITO'])
   formaPago?: 'CONTADO_CULQI' | 'CONTADO_DEPOSITO' | 'AL_CREDITO';
+
+  // EP-04 — id de una SolicitudDescuento ya APROBADA para este cliente, uso único.
+  @IsOptional()
+  @IsString()
+  solicitudDescuentoId?: string;
 }

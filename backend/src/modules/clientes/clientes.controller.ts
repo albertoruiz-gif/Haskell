@@ -1,15 +1,21 @@
 import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { EstadoSolicitudCredito } from '@prisma/client';
+import { EstadoSolicitudCredito, EstadoSolicitudDescuento } from '@prisma/client';
 import { ClientesService } from './clientes.service';
 import { CrearClienteDto } from './dto/crear-cliente.dto';
 import { SolicitarCreditoDto } from './dto/solicitar-credito.dto';
 import { AprobarSolicitudDto, RechazarSolicitudDto } from './dto/resolver-solicitud.dto';
 import { RegistrarCobroDto } from './dto/registrar-cobro.dto';
 import { MarcarEstadoClienteDto } from './dto/marcar-estado-cliente.dto';
+import { SolicitarDescuentoDto } from './dto/solicitar-descuento.dto';
+import { RechazarSolicitudDescuentoDto } from './dto/resolver-solicitud-descuento.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
 const ROLES_GESTION_CREDITO = ['ADMINISTRADOR', 'GERENTE_COMERCIAL'];
+// EP-04 — a diferencia del crédito, el descuento también puede aprobarlo
+// GERENTE_GENERAL (obligatorio por encima del 5%, validado por monto dentro
+// del service — ver ClientesService.aprobarSolicitudDescuento).
+const ROLES_GESTION_DESCUENTO = ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GERENTE_GENERAL'];
 
 @Controller()
 @UseGuards(RolesGuard)
@@ -72,6 +78,36 @@ export class ClientesController {
   @Roles(...ROLES_GESTION_CREDITO)
   rechazarSolicitud(@Req() req: any, @Param('id') id: string, @Body() dto: RechazarSolicitudDto) {
     return this.clientes.rechazarSolicitud(id, req.user.id, dto.motivoRechazo);
+  }
+
+  // --- Descuentos por volumen (EP-04) ---
+
+  @Post('clientes/:id/solicitudes-descuento')
+  @Roles('ASESOR')
+  async solicitarDescuento(@Req() req: any, @Param('id') clienteId: string, @Body() dto: SolicitarDescuentoDto) {
+    const cliente = await this.clientes.obtener(clienteId);
+    if (cliente.asesorId !== req.user.asesorId) {
+      throw new ForbiddenException('Este cliente no te pertenece.');
+    }
+    return this.clientes.solicitarDescuento(clienteId, req.user.id, dto);
+  }
+
+  @Get('solicitudes-descuento')
+  @Roles(...ROLES_GESTION_DESCUENTO)
+  listarSolicitudesDescuento(@Query('estado') estado?: EstadoSolicitudDescuento) {
+    return this.clientes.listarSolicitudesDescuento({ estado });
+  }
+
+  @Patch('solicitudes-descuento/:id/aprobar')
+  @Roles(...ROLES_GESTION_DESCUENTO)
+  aprobarSolicitudDescuento(@Req() req: any, @Param('id') id: string) {
+    return this.clientes.aprobarSolicitudDescuento(id, req.user.id, req.user.rol);
+  }
+
+  @Patch('solicitudes-descuento/:id/rechazar')
+  @Roles(...ROLES_GESTION_DESCUENTO)
+  rechazarSolicitudDescuento(@Req() req: any, @Param('id') id: string, @Body() dto: RechazarSolicitudDescuentoDto) {
+    return this.clientes.rechazarSolicitudDescuento(id, req.user.id, dto.motivoRechazo);
   }
 
   @Post('clientes/:id/cobros')

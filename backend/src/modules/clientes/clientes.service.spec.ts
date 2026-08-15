@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ClientesService } from './clientes.service';
 
 describe('ClientesService', () => {
@@ -13,6 +13,12 @@ describe('ClientesService', () => {
       },
       solicitudCredito: {
         findFirst: jest.fn(),
+        create: jest.fn(),
+        findMany: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+        update: jest.fn(),
+      },
+      solicitudDescuento: {
         create: jest.fn(),
         findMany: jest.fn(),
         findUniqueOrThrow: jest.fn(),
@@ -198,6 +204,70 @@ describe('ClientesService', () => {
 
       await service.registrarCobro('c1', 'user-1', { monto: 100, metodo: 'deposito' });
       expect(dataGuardada).toEqual({ saldoUtilizado: 200, estado: 'MOROSO' });
+    });
+  });
+
+  describe('solicitarDescuento (EP-04)', () => {
+    it('rechaza un porcentaje fuera de rango', async () => {
+      const { service } = crearService();
+      await expect(service.solicitarDescuento('c1', 'user-asesor', { porcentaje: 0 })).rejects.toThrow(BadRequestException);
+      await expect(service.solicitarDescuento('c1', 'user-asesor', { porcentaje: 101 })).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('aprobarSolicitudDescuento — umbral 5% (EP-04, decisión de negocio 2026-08-15)', () => {
+    it('rechaza aprobar una solicitud que ya fue resuelta', async () => {
+      const { service, prisma } = crearService();
+      prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({ id: 'sd1', estado: 'RECHAZADA', porcentaje: 3 });
+
+      await expect(service.aprobarSolicitudDescuento('sd1', 'gerente-1', 'GERENTE_COMERCIAL')).rejects.toThrow(BadRequestException);
+      expect(prisma.solicitudDescuento.update).not.toHaveBeenCalled();
+    });
+
+    it('GERENTE_COMERCIAL puede aprobar hasta 5% inclusive', async () => {
+      const { service, prisma } = crearService();
+      prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({ id: 'sd1', estado: 'PENDIENTE', porcentaje: 5 });
+      prisma.solicitudDescuento.update.mockResolvedValue({ id: 'sd1', estado: 'APROBADA' });
+
+      await service.aprobarSolicitudDescuento('sd1', 'gerente-1', 'GERENTE_COMERCIAL');
+      expect(prisma.solicitudDescuento.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ estado: 'APROBADA', revisadoPorId: 'gerente-1' }) }),
+      );
+    });
+
+    it('GERENTE_COMERCIAL NO puede aprobar más de 5% — hay que escalar a Gerente General', async () => {
+      const { service, prisma } = crearService();
+      prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({ id: 'sd1', estado: 'PENDIENTE', porcentaje: 5.01 });
+
+      await expect(service.aprobarSolicitudDescuento('sd1', 'gerente-1', 'GERENTE_COMERCIAL')).rejects.toThrow(ForbiddenException);
+      expect(prisma.solicitudDescuento.update).not.toHaveBeenCalled();
+    });
+
+    it('GERENTE_GENERAL puede aprobar cualquier porcentaje, incluso por encima del 5%', async () => {
+      const { service, prisma } = crearService();
+      prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({ id: 'sd1', estado: 'PENDIENTE', porcentaje: 15 });
+      prisma.solicitudDescuento.update.mockResolvedValue({ id: 'sd1', estado: 'APROBADA' });
+
+      await service.aprobarSolicitudDescuento('sd1', 'gerente-general-1', 'GERENTE_GENERAL');
+      expect(prisma.solicitudDescuento.update).toHaveBeenCalled();
+    });
+
+    it('ADMINISTRADOR puede aprobar cualquier porcentaje', async () => {
+      const { service, prisma } = crearService();
+      prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({ id: 'sd1', estado: 'PENDIENTE', porcentaje: 20 });
+      prisma.solicitudDescuento.update.mockResolvedValue({ id: 'sd1', estado: 'APROBADA' });
+
+      await service.aprobarSolicitudDescuento('sd1', 'admin-1', 'ADMINISTRADOR');
+      expect(prisma.solicitudDescuento.update).toHaveBeenCalled();
+    });
+  });
+
+  describe('rechazarSolicitudDescuento', () => {
+    it('rechaza si la solicitud ya fue resuelta', async () => {
+      const { service, prisma } = crearService();
+      prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({ id: 'sd1', estado: 'APROBADA' });
+
+      await expect(service.rechazarSolicitudDescuento('sd1', 'gerente-1')).rejects.toThrow(BadRequestException);
     });
   });
 });

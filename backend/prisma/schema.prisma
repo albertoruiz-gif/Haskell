@@ -135,6 +135,18 @@ enum EstadoSolicitudCredito {
   RECHAZADA
 }
 
+// EP-04 — descuento por volumen negociado, solo canales SALONES_BELLEZA/
+// RETAIL (decisión de negocio 2026-08-15). Minorista no usa esto — sus
+// rebajas de precio pasan por el mecanismo de Ofertas ya existente
+// (Campaign/Offer), lanzadas también por Gerencia Comercial pero por otro
+// camino. Aprobación SIEMPRE por pedido puntual, nunca queda vigente para
+// compras futuras — por eso no vive en Cliente como lineaCreditoAprobada.
+enum EstadoSolicitudDescuento {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
 // Cómo se cobra un pedido de canal SALONES_BELLEZA/RETAIL. Para los demás
 // canales el pedido siempre es CONTADO_CULQI (sin cambios, RF-017/018).
 enum FormaPago {
@@ -658,6 +670,7 @@ model Cliente {
   odooPartnerId         Int?          // res.partner en Odoo, con credit_limit nativo
 
   solicitudesCredito    SolicitudCredito[]
+  solicitudesDescuento  SolicitudDescuento[]
   pedidos               Order[]
   cobros                RegistroCobro[]
 
@@ -690,6 +703,34 @@ model SolicitudCredito {
   @@index([clienteId])
   @@index([estado])
   @@map("solicitudes_credito")
+}
+
+// EP-04 — descuento por volumen negociado, aprobación por pedido puntual
+// (nunca queda vigente para compras futuras). Umbral de quién aprueba
+// (decisión de negocio 2026-08-15): hasta 5% GERENTE_COMERCIAL, más de 5%
+// GERENTE_GENERAL — validado en ClientesService, no solo con @Roles, porque
+// depende del VALOR solicitado, no únicamente del rol del actor.
+model SolicitudDescuento {
+  id              String                   @id @default(cuid())
+  clienteId       String
+  cliente         Cliente                  @relation(fields: [clienteId], references: [id])
+  solicitadoPorId String                   // User.id del Asesor
+  porcentaje      Decimal                  @db.Decimal(5, 2) // ej. 5.00 = 5%
+  motivo          String?                  @db.Text
+  estado          EstadoSolicitudDescuento @default(PENDIENTE)
+  revisadoPorId   String?                  // User.id de quien resolvió (GerenteComercial o GerenteGeneral)
+  motivoRechazo   String?                  @db.Text
+  resueltoEn      DateTime?
+  // Se completa cuando el Asesor efectivamente arma el pedido con este
+  // descuento (ver Order.solicitudDescuentoId) — a partir de ahí queda
+  // "consumida", no se puede reusar en otro pedido.
+  pedido          Order?
+
+  createdAt       DateTime                 @default(now())
+
+  @@index([clienteId])
+  @@index([estado])
+  @@map("solicitudes_descuento")
 }
 
 // Cobranza ligera (decisión de negocio: sin módulo de cobranzas completo).
@@ -751,8 +792,26 @@ model Order {
   slaHorasSnapshot         Int?        // copia de Tarifa.slaHoras vigente al crear el pedido (RF-030)
   pagadoEn                 DateTime?   // cuando se valida el pago — arranca el conteo del SLA de entrega
   subtotalAsesor          Decimal      @db.Decimal(10, 2)
+  // totalCulqi = lo que realmente se cobra (Yape/depósito/crédito), con
+  // IGV incluido, YA descontado si corresponde — es el "precio final" al
+  // que se le calcula el desglose de abajo, nunca al revés (EP-04, decisión
+  // de negocio 2026-08-15: "Haskell tiene en sus precios el IGV incluido").
   totalCulqi              Decimal      @db.Decimal(10, 2)
   estado                  EstadoPedido @default(BORRADOR)
+
+  // EP-04 — descuento por volumen (solo canales SALONES_BELLEZA/RETAIL,
+  // aprobado por pedido puntual — ver SolicitudDescuento). 0 por defecto.
+  solicitudDescuentoId     String?      @unique
+  solicitudDescuento       SolicitudDescuento? @relation(fields: [solicitudDescuentoId], references: [id])
+  descuentoPct             Decimal      @default(0) @db.Decimal(5, 2)
+  descuentoMonto           Decimal      @default(0) @db.Decimal(10, 2)
+  // IGV (18%) calculado hacia atrás desde totalCulqi (ya con descuento
+  // aplicado): igv = totalCulqi - (totalCulqi / 1.18); valorVenta = resto.
+  // Se calcula para TODOS los pedidos (no solo Salón/Retail) — el IGV
+  // incluido en el precio aplica a toda venta, el descuento es lo único
+  // restringido por canal.
+  igv                      Decimal      @db.Decimal(10, 2)
+  valorVenta               Decimal      @db.Decimal(10, 2)
 
   // EP-21 — solo se completa en canales SALONES_BELLEZA/RETAIL. Null en
   // COMERCIO_MINORISTA (el Asesor compra para sí, no hay Cliente final).

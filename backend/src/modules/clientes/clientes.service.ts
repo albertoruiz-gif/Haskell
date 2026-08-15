@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { Canal, EstadoCliente, EstadoSolicitudCredito } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { Canal, EstadoCliente, EstadoSolicitudCredito, EstadoSolicitudDescuento } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { OdooClient } from '../odoo/odoo.client';
 
@@ -162,6 +162,62 @@ export class ClientesService {
     return this.prisma.solicitudCredito.update({
       where: { id },
       data: { estado: EstadoSolicitudCredito.RECHAZADA, revisadoPorId, motivoRechazo, resueltoEn: new Date() },
+    });
+  }
+
+  // --- Descuentos por volumen (EP-04, decisión de negocio 2026-08-15) ---
+  // Aprobación por pedido puntual (nunca queda vigente para compras
+  // futuras — a diferencia de la línea de crédito, acá NO se guarda nada
+  // en el Cliente). Umbral de quién puede aprobar: hasta 5% GERENTE_COMERCIAL,
+  // más de 5% GERENTE_GENERAL — depende del VALOR pedido, no solo del rol,
+  // así que el controller no alcanza con @Roles, se valida acá.
+  private readonly UMBRAL_APROBACION_GERENTE_COMERCIAL = 5;
+
+  async solicitarDescuento(clienteId: string, solicitadoPorId: string, data: { porcentaje: number; motivo?: string }) {
+    if (data.porcentaje <= 0 || data.porcentaje > 100) {
+      throw new BadRequestException('El porcentaje de descuento debe estar entre 0 y 100.');
+    }
+    return this.prisma.solicitudDescuento.create({
+      data: { clienteId, solicitadoPorId, porcentaje: data.porcentaje, motivo: data.motivo },
+    });
+  }
+
+  async listarSolicitudesDescuento(filtro: { estado?: EstadoSolicitudDescuento }) {
+    return this.prisma.solicitudDescuento.findMany({
+      where: filtro.estado ? { estado: filtro.estado } : undefined,
+      include: { cliente: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async aprobarSolicitudDescuento(id: string, revisadoPorId: string, rolActor: string) {
+    const solicitud = await this.prisma.solicitudDescuento.findUniqueOrThrow({ where: { id } });
+    if (solicitud.estado !== EstadoSolicitudDescuento.PENDIENTE) {
+      throw new BadRequestException(`La solicitud ya fue resuelta (${solicitud.estado}).`);
+    }
+    const porcentaje = Number(solicitud.porcentaje);
+    // ADMINISTRADOR y GERENTE_GENERAL pueden aprobar cualquier %; GERENTE_COMERCIAL
+    // solo hasta el umbral — por encima de eso, esta misma llamada rechaza y
+    // el pedido tiene que volver a mandarse a Gerencia General.
+    if (porcentaje > this.UMBRAL_APROBACION_GERENTE_COMERCIAL && rolActor === 'GERENTE_COMERCIAL') {
+      throw new ForbiddenException(
+        `Este descuento (${porcentaje}%) supera el ${this.UMBRAL_APROBACION_GERENTE_COMERCIAL}% — requiere aprobación de Gerente General.`,
+      );
+    }
+    return this.prisma.solicitudDescuento.update({
+      where: { id },
+      data: { estado: EstadoSolicitudDescuento.APROBADA, revisadoPorId, resueltoEn: new Date() },
+    });
+  }
+
+  async rechazarSolicitudDescuento(id: string, revisadoPorId: string, motivoRechazo?: string) {
+    const solicitud = await this.prisma.solicitudDescuento.findUniqueOrThrow({ where: { id } });
+    if (solicitud.estado !== EstadoSolicitudDescuento.PENDIENTE) {
+      throw new BadRequestException(`La solicitud ya fue resuelta (${solicitud.estado}).`);
+    }
+    return this.prisma.solicitudDescuento.update({
+      where: { id },
+      data: { estado: EstadoSolicitudDescuento.RECHAZADA, revisadoPorId, motivoRechazo, resueltoEn: new Date() },
     });
   }
 

@@ -86,6 +86,37 @@ describe('PricingService', () => {
     });
   });
 
+  describe('calcularDescuento (EP-04 — sobre el subtotal de productos, nunca sobre el envío)', () => {
+    it('aplica el porcentaje sobre el subtotal', () => {
+      const { service } = crearService();
+      expect(service.calcularDescuento(100, 5)).toBe(5);
+      expect(service.calcularDescuento(75, 20)).toBe(15);
+    });
+  });
+
+  describe('calcularIGV (EP-04 — decisión de negocio 2026-08-15: precios con IGV incluido, calculado hacia atrás desde el total ya con descuento)', () => {
+    it('reproduce el ejemplo real dado por el usuario (S/80 final -> S/12.20 IGV, S/67.80 valor de venta)', () => {
+      const { service } = crearService();
+      const { igv, valorVenta } = service.calcularIGV(80);
+      expect(valorVenta).toBe(67.8);
+      expect(igv).toBe(12.2);
+    });
+
+    it('igv + valorVenta siempre suma EXACTO el total (no puede quedar un centavo descuadrado en la boleta)', () => {
+      const { service } = crearService();
+      // Casos con potencial de arrastrar error de redondeo
+      for (const total of [80, 100, 33.33, 84.75, 1.01, 999.99]) {
+        const { igv, valorVenta } = service.calcularIGV(total);
+        expect(Math.round((igv + valorVenta) * 100) / 100).toBe(total);
+      }
+    });
+
+    it('con total 0, no rompe (igv y valorVenta en 0)', () => {
+      const { service } = crearService();
+      expect(service.calcularIGV(0)).toEqual({ igv: 0, valorVenta: 0 });
+    });
+  });
+
   describe('actualizarPorcentaje', () => {
     it('rechaza un porcentaje fuera de rango (0-100)', async () => {
       const { service } = crearService();

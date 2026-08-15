@@ -100,6 +100,10 @@ export class OrdersService {
       items.map((i) => ({ pvpUnitario: i.pvpUnitario, porcentaje: i.porcentajeAsesorAplicado, cantidad: i.cantidad })),
       Number(tarifa.precio),
     );
+    // EP-04 — IGV incluido en el precio, calculado hacia atrás. Este camino
+    // (basado en Cart) no soporta descuento por volumen — es exclusivo del
+    // flujo de EP-21 en crearPedidoDesdeItems, el que de verdad usa el frontend hoy.
+    const { igv, valorVenta } = this.pricing.calcularIGV(totalCulqi);
 
     const order = await this.prisma.order.create({
       data: {
@@ -113,6 +117,8 @@ export class OrdersService {
         slaHorasSnapshot: tarifa.slaHoras,
         subtotalAsesor: items.reduce((acc, i) => acc + i.precioAsesorUnitario * i.cantidad, 0),
         totalCulqi,
+        igv,
+        valorVenta,
         estado: EstadoPedido.PENDIENTE_PAGO,
         items: { create: items },
       },
@@ -128,10 +134,38 @@ export class OrdersService {
    * directo la lista de items y arma el pedido igual, con la misma
    * revalidacion de precio/oferta/tarifa (RF-017, RN-038).
    */
+  /**
+   * EP-04 — valida que la SolicitudDescuento exista, esté APROBADA,
+   * corresponda a este mismo cliente y no se haya usado ya en otro pedido
+   * (el include de "pedido" es la vía barata de chequear el uso único antes
+   * de intentar el create, que igual está protegido por el @unique de
+   * Order.solicitudDescuentoId a nivel de base de datos como última red).
+   */
+  private async validarDescuento(clienteId: string | undefined, solicitudDescuentoId: string | undefined, subtotalProductos: number) {
+    if (!solicitudDescuentoId) return { descuentoPct: 0, descuentoMonto: 0, solicitudDescuentoId: undefined as string | undefined };
+
+    const solicitud = await this.prisma.solicitudDescuento.findUniqueOrThrow({
+      where: { id: solicitudDescuentoId },
+      include: { pedido: true },
+    });
+    if (solicitud.clienteId !== clienteId) {
+      throw new BadRequestException('El descuento aprobado no corresponde a este cliente.');
+    }
+    if (solicitud.estado !== 'APROBADA') {
+      throw new BadRequestException(`La solicitud de descuento no está aprobada (estado: ${solicitud.estado}).`);
+    }
+    if (solicitud.pedido) {
+      throw new BadRequestException('Este descuento ya se usó en otro pedido — es válido una sola vez (EP-04).');
+    }
+    const descuentoPct = Number(solicitud.porcentaje);
+    const descuentoMonto = this.pricing.calcularDescuento(subtotalProductos, descuentoPct);
+    return { descuentoPct, descuentoMonto, solicitudDescuentoId };
+  }
+
   async crearPedidoDesdeItems(
     asesorId: string,
     itemsSolicitados: { catalogLineId: string; cantidad: number }[],
-    opciones?: { clienteId?: string; formaPago?: FormaPago },
+    opciones?: { clienteId?: string; formaPago?: FormaPago; solicitudDescuentoId?: string },
   ) {
     if (itemsSolicitados.length === 0) throw new BadRequestException('El carrito está vacío.');
 
@@ -201,10 +235,27 @@ export class OrdersService {
       }),
     );
 
-    const totalCulqi = this.pricing.calcularTotalCulqi(
-      items.map((i) => ({ pvpUnitario: i.pvpUnitario, porcentaje: i.porcentajeAsesorAplicado, cantidad: i.cantidad })),
-      Number(tarifa.precio),
+    const itemsParaPricing = items.map((i) => ({ pvpUnitario: i.pvpUnitario, porcentaje: i.porcentajeAsesorAplicado, cantidad: i.cantidad }));
+    const subtotalProductos = this.pricing.calcularSubtotalProductos(itemsParaPricing);
+    const envio = Number(tarifa.precio);
+
+    // EP-04 — descuento por volumen: solo canales con Cliente (Salón/Retail),
+    // requiere una SolicitudDescuento ya APROBADA para ESTE cliente. Nunca
+    // sobre el envío (RN-009).
+    if (opciones?.solicitudDescuentoId && !requiereCliente) {
+      throw new BadRequestException('El descuento por volumen solo aplica a los canales Salón de Belleza y Retail.');
+    }
+    const { descuentoPct, descuentoMonto, solicitudDescuentoId } = await this.validarDescuento(
+      opciones?.clienteId,
+      opciones?.solicitudDescuentoId,
+      subtotalProductos,
     );
+
+    const totalCulqi = Math.round((subtotalProductos - descuentoMonto + envio) * 100) / 100;
+    // EP-04 — IGV para TODOS los pedidos (no solo Salón/Retail): "Haskell
+    // tiene en sus precios el IGV incluido", se calcula hacia atrás desde
+    // totalCulqi YA con descuento aplicado, nunca sumado por encima.
+    const { igv, valorVenta } = this.pricing.calcularIGV(totalCulqi);
 
     // EP-21 — para AL_CREDITO, reservar el cupo ANTES de crear el pedido: si
     // no hay línea/cupo suficiente, falla rápido sin dejar un pedido a medio
@@ -225,6 +276,11 @@ export class OrdersService {
         slaHorasSnapshot: tarifa.slaHoras,
         subtotalAsesor: items.reduce((acc, i) => acc + i.precioAsesorUnitario * i.cantidad, 0),
         totalCulqi,
+        descuentoPct,
+        descuentoMonto,
+        solicitudDescuentoId,
+        igv,
+        valorVenta,
         estado: EstadoPedido.PENDIENTE_PAGO,
         clienteId: opciones?.clienteId,
         formaPago,

@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { EstadoPedido } from '@prisma/client';
 import { OrdersService } from './orders.service';
+import { PricingService } from '../pricing/pricing.service';
 
 // EP-07 (auditoría 2026-08-12): validarPagoManual() y rechazarPedido() no
 // validaban el estado previo del pedido — este es el bug más crítico
@@ -175,5 +176,108 @@ describe('OrdersService — confirmarPagoYEnviarAOdoo', () => {
     expect(inventario.comprometerParaOrder).not.toHaveBeenCalled(); // ya se había comprometido antes
     expect(odoo.crearPedidoVenta).toHaveBeenCalled();
     expect(prisma.order.update).toHaveBeenCalledWith(expect.objectContaining({ data: { odooSaleOrderId: 999 } }));
+  });
+});
+
+// EP-04 (decisión de negocio 2026-08-15): descuento por volumen aprobado
+// por pedido puntual, uso único, y el desglose de IGV que se le calcula
+// hacia atrás a TODO pedido (con o sin descuento). Usa el PricingService
+// REAL (no mockeado) para que el cálculo de plata sea el algoritmo de
+// verdad, no una función que "se llamó con estos argumentos".
+describe('OrdersService — crearPedidoDesdeItems (EP-04 descuento + IGV)', () => {
+  function crearService() {
+    const catalog = { id: 'cat1', campaignId: 'camp1', canal: 'RETAIL', estado: 'PUBLICADO' };
+    const asesor = {
+      id: 'a1',
+      canal: 'RETAIL',
+      direcciones: [{ id: 'd1', distrito: 'Lima', predeterminada: true }],
+    };
+    const catalogLine = { id: 'cl1', sku: 'HSK-01', nombre: 'Producto X', pvpCampania: 100, catalogId: 'cat1', catalog };
+
+    const prisma: any = {
+      asesor: { findUniqueOrThrow: jest.fn().mockResolvedValue(asesor) },
+      cliente: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'c1', asesorId: 'a1' }) },
+      tarifa: { findUnique: jest.fn().mockResolvedValue({ precio: 10, activa: true }) },
+      catalogLine: { findMany: jest.fn().mockResolvedValue([catalogLine]) },
+      solicitudDescuento: { findUniqueOrThrow: jest.fn() },
+      order: {
+        create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'order-nuevo', ...data, items: [] })),
+      },
+    };
+    const pricingPrisma: any = { pricingConfig: { findFirst: jest.fn().mockResolvedValue(null) } }; // usa 80% default
+    const pricing = new PricingService(pricingPrisma);
+    const campaigns = { ofertaVigentePara: jest.fn().mockResolvedValue(null) };
+    const inventario = { reservarParaOrder: jest.fn().mockResolvedValue(undefined) };
+    const operaciones = { sincronizarEstadoPedidoAOdoo: jest.fn().mockResolvedValue(undefined) };
+    const clientes = { reservarCredito: jest.fn().mockResolvedValue(undefined), liberarCredito: jest.fn().mockResolvedValue(undefined) };
+
+    const service = new OrdersService(prisma, pricing, campaigns as any, {} as any, inventario as any, operaciones as any, clientes as any);
+    return { service, prisma, clientes };
+  }
+
+  // 1 unidad, PVP 100, %asesor 80 (default) -> precioAsesorUnitario 80, + envío 10 = totalCulqi 90 sin descuento.
+
+  it('sin solicitudDescuentoId, no aplica descuento y calcula el IGV sobre el total completo', async () => {
+    const { service } = crearService();
+    const order = await service.crearPedidoDesdeItems('a1', [{ catalogLineId: 'cl1', cantidad: 1 }], { clienteId: 'c1' });
+    expect(order.descuentoPct).toBe(0);
+    expect(order.descuentoMonto).toBe(0);
+    expect(order.totalCulqi).toBe(90); // 80 + 10 envío
+    // igv = 90 - round(90/1.18,2) = 90 - 76.27 = 13.73
+    expect(order.valorVenta).toBe(76.27);
+    expect(order.igv).toBe(13.73);
+  });
+
+  it('con un descuento aprobado, lo aplica sobre el subtotal de productos (nunca sobre el envío) y recalcula el IGV sobre el total ya descontado', async () => {
+    const { service, prisma } = crearService();
+    prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({
+      id: 'sd1', clienteId: 'c1', estado: 'APROBADA', porcentaje: 5, pedido: null,
+    });
+
+    const order = await service.crearPedidoDesdeItems('a1', [{ catalogLineId: 'cl1', cantidad: 1 }], {
+      clienteId: 'c1',
+      solicitudDescuentoId: 'sd1',
+    });
+    // subtotal productos = 80, descuento 5% = 4 -> totalCulqi = 80 - 4 + 10 envío = 86
+    expect(order.descuentoPct).toBe(5);
+    expect(order.descuentoMonto).toBe(4);
+    expect(order.totalCulqi).toBe(86);
+    expect(prisma.order.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ solicitudDescuentoId: 'sd1' }) }),
+    );
+  });
+
+  it('rechaza un descuento que pertenece a otro cliente', async () => {
+    const { service, prisma } = crearService();
+    prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({
+      id: 'sd1', clienteId: 'otro-cliente', estado: 'APROBADA', porcentaje: 5, pedido: null,
+    });
+
+    await expect(
+      service.crearPedidoDesdeItems('a1', [{ catalogLineId: 'cl1', cantidad: 1 }], { clienteId: 'c1', solicitudDescuentoId: 'sd1' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.order.create).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un descuento que todavía no fue aprobado', async () => {
+    const { service, prisma } = crearService();
+    prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({
+      id: 'sd1', clienteId: 'c1', estado: 'PENDIENTE', porcentaje: 5, pedido: null,
+    });
+
+    await expect(
+      service.crearPedidoDesdeItems('a1', [{ catalogLineId: 'cl1', cantidad: 1 }], { clienteId: 'c1', solicitudDescuentoId: 'sd1' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rechaza un descuento ya usado en otro pedido (uso único)', async () => {
+    const { service, prisma } = crearService();
+    prisma.solicitudDescuento.findUniqueOrThrow.mockResolvedValue({
+      id: 'sd1', clienteId: 'c1', estado: 'APROBADA', porcentaje: 5, pedido: { id: 'otro-pedido' },
+    });
+
+    await expect(
+      service.crearPedidoDesdeItems('a1', [{ catalogLineId: 'cl1', cantidad: 1 }], { clienteId: 'c1', solicitudDescuentoId: 'sd1' }),
+    ).rejects.toThrow(BadRequestException);
   });
 });

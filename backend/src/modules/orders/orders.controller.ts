@@ -38,6 +38,7 @@ export class OrdersController {
     return this.orders.crearPedidoDesdeItems(req.user.asesorId, dto.items, {
       clienteId: dto.clienteId,
       formaPago: dto.formaPago,
+      solicitudDescuentoId: dto.solicitudDescuentoId,
     });
   }
 

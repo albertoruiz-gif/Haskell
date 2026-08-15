@@ -77,12 +77,47 @@ export class PricingService {
     return Math.round(pvpUnitario * (porcentaje / 100) * 100) / 100;
   }
 
-  /** RN-010 (adenda): Total Culqi = Σ(PVP × %asesor vigente × cantidad) + envío. El envío no lleva descuento (RN-009). */
-  calcularTotalCulqi(items: { pvpUnitario: number; porcentaje: number; cantidad: number }[], envio: number): number {
+  /** Σ(PVP × %asesor vigente × cantidad), sin envío — separado de calcularTotalCulqi para poder aplicarle el descuento de EP-04 antes de sumar el envío (RN-009: el envío nunca lleva descuento). */
+  calcularSubtotalProductos(items: { pvpUnitario: number; porcentaje: number; cantidad: number }[]): number {
     const subtotal = items.reduce(
       (acc, item) => acc + this.calcularPrecioAsesor(item.pvpUnitario, item.porcentaje) * item.cantidad,
       0,
     );
-    return Math.round((subtotal + envio) * 100) / 100;
+    return Math.round(subtotal * 100) / 100;
+  }
+
+  /** RN-010 (adenda): Total Culqi = Σ(PVP × %asesor vigente × cantidad) + envío. El envío no lleva descuento (RN-009). */
+  calcularTotalCulqi(items: { pvpUnitario: number; porcentaje: number; cantidad: number }[], envio: number): number {
+    return Math.round((this.calcularSubtotalProductos(items) + envio) * 100) / 100;
+  }
+
+  private readonly IGV_TASA = 1.18; // 18%, Perú
+
+  /**
+   * EP-04 — descuento por volumen (decisión de negocio 2026-08-15): se
+   * aplica sobre el subtotal de PRODUCTOS únicamente, nunca sobre el envío
+   * (RN-009, mismo criterio que las ofertas). Redondeado a 2 decimales.
+   */
+  calcularDescuento(subtotalProductos: number, porcentaje: number): number {
+    return Math.round(subtotalProductos * (porcentaje / 100) * 100) / 100;
+  }
+
+  /**
+   * EP-04 (decisión de negocio 2026-08-15, verificada con el ejemplo real
+   * del usuario: S/80 final → S/12.20 de IGV, S/67.80 de valor de venta):
+   * "Haskell tiene en sus precios el IGV incluido" — totalConDescuento ya
+   * ES el precio final que se cobra (Culqi/depósito/crédito), y el IGV se
+   * calcula HACIA ATRÁS desde ahí, nunca sumado por encima.
+   *
+   * valorVenta se calcula primero y se redondea; igv se obtiene por
+   * diferencia (no redondeando ambos por separado) para garantizar que
+   * valorVenta + igv sea EXACTAMENTE igual a totalConDescuento — un pedido
+   * cuya boleta no cuadra centavo a centavo es peor que uno con un redondeo
+   * de un centavo hacia un lado u otro.
+   */
+  calcularIGV(totalConDescuento: number): { igv: number; valorVenta: number } {
+    const valorVenta = Math.round((totalConDescuento / this.IGV_TASA) * 100) / 100;
+    const igv = Math.round((totalConDescuento - valorVenta) * 100) / 100;
+    return { igv, valorVenta };
   }
 }
