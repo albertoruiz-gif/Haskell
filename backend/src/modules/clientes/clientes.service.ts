@@ -91,6 +91,10 @@ export class ClientesService {
   async listar(filtro: { asesorId?: string }) {
     return this.prisma.cliente.findMany({
       where: filtro.asesorId ? { asesorId: filtro.asesorId } : undefined,
+      // Solo la solicitud PENDIENTE (si hay) — el frontend la usa para no
+      // dejar mandar una segunda solicitud mientras la primera se revisa,
+      // sin necesitar el historial completo en la vista de lista.
+      include: { solicitudesCredito: { where: { estado: 'PENDIENTE' } } },
       orderBy: { createdAt: 'desc' },
     });
   }

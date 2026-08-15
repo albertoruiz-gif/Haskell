@@ -14,17 +14,19 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Script from 'next/script';
 import { apiFetch, ApiError } from '../../lib/api';
+import { getUsuario } from '../../lib/auth';
 import { formatearNumeroPedido } from '../../lib/numeroPedido';
 import { useCart } from '../../components/cart/CartContext';
 import { ErrorBanner } from '../../components/ui/ErrorBanner';
 import { ResumenPremios } from '../../components/premios/ResumenPremios';
 import { AvisoLibroReclamaciones } from '../../components/ui/AvisoLibroReclamaciones';
+import { ClienteYFormaPagoSelector, FormaPago } from '../../components/cart/ClienteYFormaPagoSelector';
 
 // precioAsesor null = sin stock físico confirmado (aparece acá solo por
 // búsqueda exacta de nombre/SKU, ver catalog.controller.ts) — no se puede
 // agregar al carrito todavía.
 type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number | null; stockDisponible?: number };
-type Pedido = { id: string; numero: number; canal: string; referenciaWeb: string };
+type Pedido = { id: string; numero: number; canal: string; referenciaWeb: string; estado: string; formaPago: FormaPago };
 
 declare global {
   interface Window {
@@ -49,6 +51,18 @@ export default function CarritoPage() {
   const [codigoYape, setCodigoYape] = useState('');
   const [culqiListo, setCulqiListo] = useState(false);
 
+  // EP-21 — solo aplica en canales SALONES_BELLEZA/RETAIL.
+  const canal = getUsuario()?.canal;
+  const requiereCliente = canal === 'SALONES_BELLEZA' || canal === 'RETAIL';
+  const [clienteId, setClienteId] = useState('');
+  const [formaPago, setFormaPago] = useState<FormaPago>('CONTADO_CULQI');
+  // Pedido creado por depósito bancario (PENDIENTE_PAGO), esperando que el
+  // Asesor cargue el número de operación una vez que el cliente depositó.
+  const [pedidoDeposito, setPedidoDeposito] = useState<Pedido | null>(null);
+  const [numeroOperacion, setNumeroOperacion] = useState('');
+  const [banco, setBanco] = useState('');
+  const [depositoEnviado, setDepositoEnviado] = useState(false);
+
   useEffect(() => {
     if (!busqueda) {
       setResultados([]);
@@ -72,19 +86,48 @@ export default function CarritoPage() {
   const envio = items.length > 0 ? 14.0 : 0; // TODO: reemplazar por GET /api/tarifas?distrito=... (RF-016, calculado en servidor)
   const total = subtotal + envio;
 
-  // Paso 1: crea el pedido real (sin cambios) y pasa a pedir celular/código Yape.
+  // Paso 1: crea el pedido real. Según formaPago, el siguiente paso difiere
+  // (EP-21): AL_CREDITO ya vuelve PAGADO de una (no pasa por Culqi);
+  // CONTADO_DEPOSITO queda esperando el número de operación; CONTADO_CULQI
+  // sigue el flujo de Yape de siempre.
   async function crearPedido() {
     setError(null);
     setPagando(true);
     try {
       const pedido = await apiFetch<Pedido>('/orders', {
         method: 'POST',
-        body: { items: items.map((i) => ({ catalogLineId: i.catalogLineId, cantidad: i.cantidad })) },
+        body: {
+          items: items.map((i) => ({ catalogLineId: i.catalogLineId, cantidad: i.cantidad })),
+          ...(requiereCliente && clienteId ? { clienteId, formaPago } : {}),
+        },
       });
       vaciar();
-      setPedidoPendiente(pedido);
+      if (pedido.formaPago === 'AL_CREDITO') {
+        setPedidoOk(formatearNumeroPedido(pedido.canal, pedido.numero) ?? pedido.referenciaWeb);
+      } else if (pedido.formaPago === 'CONTADO_DEPOSITO') {
+        setPedidoDeposito(pedido);
+      } else {
+        setPedidoPendiente(pedido);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo crear el pedido.');
+    } finally {
+      setPagando(false);
+    }
+  }
+
+  // EP-21 — el Asesor carga el comprobante una vez que su cliente ya
+  // depositó (el número de operación no existe todavía al crear el
+  // pedido). Un GERENTE_COMERCIAL/FINANZAS lo valida después en Gestión.
+  async function registrarDeposito() {
+    if (!pedidoDeposito) return;
+    setError(null);
+    setPagando(true);
+    try {
+      await apiFetch(`/orders/${pedidoDeposito.id}/deposito`, { method: 'PATCH', body: { numeroOperacion, banco } });
+      setDepositoEnviado(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo registrar el depósito.');
     } finally {
       setPagando(false);
     }
@@ -135,10 +178,49 @@ export default function CarritoPage() {
       {pedidoOk ? (
         <div className="space-y-3 rounded-card bg-white p-4 text-center shadow-sm">
           <p className="text-lg font-medium text-bosque">¡Pedido pagado!</p>
-          <p className="text-sm text-bosque/60">Referencia {pedidoOk}. El cargo por Yape se confirmó y el pedido ya está en camino.</p>
+          <p className="text-sm text-bosque/60">Referencia {pedidoOk}. El pedido ya está confirmado y en camino.</p>
           <button onClick={() => router.push('/catalogo')} className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">
             Volver al catálogo
           </button>
+        </div>
+      ) : pedidoDeposito ? (
+        <div className="mx-auto max-w-sm space-y-3 rounded-card bg-white p-4 shadow-sm">
+          {depositoEnviado ? (
+            <>
+              <p className="text-lg font-medium text-bosque">¡Comprobante enviado!</p>
+              <p className="text-sm text-bosque/60">
+                Pedido {pedidoDeposito.referenciaWeb} — queda pendiente de que Gerencia Comercial/Finanzas valide el depósito.
+              </p>
+              <button onClick={() => router.push('/catalogo')} className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">
+                Volver al catálogo
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-lg font-medium text-bosque">Cargá el comprobante del depósito</p>
+              <p className="text-sm text-bosque/60">Pedido {pedidoDeposito.referenciaWeb} — S/ {total.toFixed(2)}</p>
+              <ErrorBanner mensaje={error} />
+              <input
+                placeholder="Número de operación"
+                value={numeroOperacion}
+                onChange={(e) => setNumeroOperacion(e.target.value)}
+                className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
+              />
+              <input
+                placeholder="Banco"
+                value={banco}
+                onChange={(e) => setBanco(e.target.value)}
+                className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
+              />
+              <button
+                onClick={registrarDeposito}
+                disabled={pagando || !numeroOperacion || !banco}
+                className="w-full rounded-pill bg-acento py-3 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {pagando ? 'Enviando…' : 'Enviar comprobante'}
+              </button>
+            </>
+          )}
         </div>
       ) : pedidoPendiente ? (
         <div className="mx-auto max-w-sm space-y-3 rounded-card bg-white p-4 shadow-sm">
@@ -272,16 +354,29 @@ export default function CarritoPage() {
               <p className="mt-1 text-[11px] text-bosque/40">El monto final (con envío real) lo calcula el servidor al crear el pedido.</p>
             </div>
 
-            <div className="rounded-card border-2 border-acento bg-white p-3">
-              <p className="text-sm font-medium text-bosque">Pagar con Yape</p>
-              <div className="mt-2 flex items-center justify-between rounded-pill border-2 border-acento px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium text-acento">Yape</p>
-                  <p className="text-xs text-bosque/60">Cargo automático — celular y código Yape en el siguiente paso</p>
+            {requiereCliente ? (
+              <ClienteYFormaPagoSelector
+                clienteId={clienteId}
+                formaPago={formaPago}
+                onCambiarCliente={(id) => {
+                  setClienteId(id);
+                  if (!id) setFormaPago('CONTADO_CULQI'); // sin cliente, solo Yape (RN EP-21)
+                }}
+                onCambiarFormaPago={setFormaPago}
+                totalPedido={total}
+              />
+            ) : (
+              <div className="rounded-card border-2 border-acento bg-white p-3">
+                <p className="text-sm font-medium text-bosque">Pagar con Yape</p>
+                <div className="mt-2 flex items-center justify-between rounded-pill border-2 border-acento px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-acento">Yape</p>
+                    <p className="text-xs text-bosque/60">Cargo automático — celular y código Yape en el siguiente paso</p>
+                  </div>
+                  <span className="rounded-pill bg-musgo px-2 py-1 text-xs font-medium text-white">Único medio</span>
                 </div>
-                <span className="rounded-pill bg-musgo px-2 py-1 text-xs font-medium text-white">Único medio</span>
               </div>
-            </div>
+            )}
           </div>
 
           <AvisoLibroReclamaciones />

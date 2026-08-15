@@ -11,6 +11,10 @@ const TABS = [
   { href: '/catalogo', label: 'Catálogo' },
   { href: '/carrito', label: 'Carrito' },
   { href: '/mis-ventas', label: 'Mis Ventas' },
+  // EP-21: solo tiene sentido en Salón/Retail — la propia página avisa si
+  // el canal no aplica, pero igual se filtra acá para no mostrar un link
+  // muerto a los Asesores de Comercio Minorista.
+  { href: '/mis-clientes', label: 'Mis Clientes' },
   { href: '/gestion', label: 'Gestión' },
   { href: '/almacen', label: 'Almacén' },
   { href: '/delivery', label: 'Delivery' },
@@ -24,8 +28,8 @@ const TABS = [
 // pestaña extra (además de Cerrar sesión), en vez de mostrar las cinco por
 // las dudas.
 const TABS_POR_ROL: Record<string, string[]> = {
-  ASESOR: ['/catalogo', '/carrito', '/mis-ventas'],
-  VENDEDOR: ['/catalogo', '/carrito', '/mis-ventas'],
+  ASESOR: ['/catalogo', '/carrito', '/mis-ventas', '/mis-clientes'],
+  VENDEDOR: ['/catalogo', '/carrito', '/mis-ventas', '/mis-clientes'],
   // Los Líderes tienen su propia pestaña acotada a su equipo, no el
   // tablero gerencial completo (ver docs/PROMPT_dashboard_indicadores_frontend.md sección 5).
   LIDER_MINORISTA: ['/gestion', '/mi-equipo'],
@@ -63,7 +67,14 @@ export function NavTabs() {
     router.push('/login');
   }
 
-  const tabsVisibles = usuario ? TABS.filter((tab) => (TABS_POR_ROL[usuario.rol] ?? []).includes(tab.href)) : [];
+  const requiereCliente = usuario?.canal === 'SALONES_BELLEZA' || usuario?.canal === 'RETAIL';
+  const tabsVisibles = usuario
+    ? TABS.filter((tab) => {
+        if (!(TABS_POR_ROL[usuario.rol] ?? []).includes(tab.href)) return false;
+        if (tab.href === '/mis-clientes') return requiereCliente;
+        return true;
+      })
+    : [];
 
   function Tabs() {
     return (

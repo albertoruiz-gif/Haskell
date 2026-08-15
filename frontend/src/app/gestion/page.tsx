@@ -17,6 +17,7 @@ import { TransporteTab } from '../../components/admin/TransporteTab';
 import { PremiosTab } from '../../components/admin/PremiosTab';
 import { ConfiguracionTab } from '../../components/admin/ConfiguracionTab';
 import { AdministracionTab } from '../../components/admin/AdministracionTab';
+import { CreditosTab } from '../../components/admin/CreditosTab';
 
 const TABS = [
   { id: 'pagos', label: 'Pagos' },
@@ -26,6 +27,10 @@ const TABS = [
   { id: 'ofertas', label: 'Ofertas y Packs' },
   { id: 'transporte', label: 'Transporte' },
   { id: 'premios', label: 'Premios' },
+  // EP-21: aprobación de línea de crédito — solo GERENTE_COMERCIAL/
+  // ADMINISTRADOR, filtrado abajo igual que "administracion". El backend
+  // también lo exige; esto es solo para no ofrecer un botón que 403ea.
+  { id: 'creditos', label: 'Créditos' },
   { id: 'configuracion', label: 'Configuración' },
   // EP-18: cuentas administrativas (2FA) — solo ADMINISTRADOR, filtrado en
   // el render de abajo. El backend también lo exige; esto es nada más para
@@ -40,8 +45,14 @@ type Pendientes = { pagos: number; catalogo: number; transporte: number };
 export default function GestionPage() {
   const [tab, setTab] = useState<TabId>('pagos');
   const [pendientes, setPendientes] = useState<Pendientes>({ pagos: 0, catalogo: 0, transporte: 0 });
-  const esAdministrador = getUsuario()?.rol === 'ADMINISTRADOR';
-  const tabsVisibles = TABS.filter((t) => t.id !== 'administracion' || esAdministrador);
+  const rol = getUsuario()?.rol;
+  const esAdministrador = rol === 'ADMINISTRADOR';
+  const puedeGestionarCreditos = rol === 'ADMINISTRADOR' || rol === 'GERENTE_COMERCIAL';
+  const tabsVisibles = TABS.filter((t) => {
+    if (t.id === 'administracion') return esAdministrador;
+    if (t.id === 'creditos') return puedeGestionarCreditos;
+    return true;
+  });
   // Compartido entre Catálogo/Precios y Ofertas: antes cada pestaña tenía su
   // propio selector de catálogo sin relación — elegir uno en una no lo
   // dejaba elegido en la otra (ver auditoría UX).
@@ -123,6 +134,7 @@ export default function GestionPage() {
       )}
       {tab === 'transporte' && <TransporteTab />}
       {tab === 'premios' && <PremiosTab />}
+      {tab === 'creditos' && puedeGestionarCreditos && <CreditosTab />}
       {tab === 'configuracion' && <ConfiguracionTab />}
       {tab === 'administracion' && esAdministrador && <AdministracionTab />}
     </div>
