@@ -180,7 +180,7 @@ AWS rechazó el aumento de límite dos veces, sin explicar criterios específico
 | EP-21 (clientes/crédito), EP-17 (notificaciones proactivas) | Sin empezar | Requieren definición de negocio antes de programar |
 | Pantalla de gestión de cuentas administrativas | Resuelto | — |
 | Revisión legal formal de Términos/Política de Cambios/Anexo III | Pendiente | Requiere abogado, deprioritizado a pedido del usuario |
-| Automatizar limpieza de disco en las EC2 (`docker prune`) | Sugerido, no implementado | Hoy se hace a mano antes de cada tanda de despliegues |
+| Automatizar limpieza de disco en las EC2 (`docker prune`) | **Resuelto 2026-08-14** | `/etc/cron.d/docker-cleanup` en Testeo y Producción — `docker system prune -af` cada domingo 3:15am, no toca volúmenes (pgdata/uploads) |
 
 ---
 
