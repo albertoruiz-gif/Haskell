@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { PERMISOS_CATALOGO } from './permisos-catalogo';
 
@@ -13,6 +13,7 @@ import { PERMISOS_CATALOGO } from './permisos-catalogo';
  */
 @Injectable()
 export class PermisosService implements OnModuleInit {
+  private readonly logger = new Logger(PermisosService.name);
   private cache = new Map<string, string[]>();
 
   constructor(private readonly prisma: PrismaService) {}
@@ -22,8 +23,21 @@ export class PermisosService implements OnModuleInit {
   }
 
   private async recargarCache() {
-    const overrides = await this.prisma.permisoOverride.findMany();
-    this.cache = new Map(overrides.map((o) => [o.clave, o.roles as string[]]));
+    // Tolerante a que la tabla todavía no exista: este servicio es global y
+    // se inicializa al arrancar la app, ANTES de que corra
+    // `prisma migrate deploy` en un deploy nuevo (ese paso necesita el
+    // contenedor arriba). Sin este catch, un deploy con una migración
+    // pendiente entra en loop de crash — el contenedor nunca llega a estar
+    // arriba para que la migración pueda correr. Caché vacía = igual que
+    // "sin overrides guardados" (todo usa el default de @Roles()), que es
+    // exactamente correcto tanto si la tabla no existe todavía como si
+    // existe pero está vacía.
+    try {
+      const overrides = await this.prisma.permisoOverride.findMany();
+      this.cache = new Map(overrides.map((o) => [o.clave, o.roles as string[]]));
+    } catch (err) {
+      this.logger.warn(`No se pudo cargar permisos_override (¿migración pendiente?): ${(err as Error).message}`);
+    }
   }
 
   /** Lectura sincrónica desde la caché — la usa RolesGuard en cada request. */

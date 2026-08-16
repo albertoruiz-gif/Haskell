@@ -24,6 +24,13 @@ describe('PermisosService', () => {
     expect(service.rolesEfectivos(CLAVE_EJEMPLO, DEFAULT_EJEMPLO)).toEqual(DEFAULT_EJEMPLO);
   });
 
+  it('onModuleInit() no revienta si la tabla todavía no existe (migración pendiente en un deploy nuevo) — cae a los defaults', async () => {
+    const { service, prisma } = crearService([]);
+    prisma.permisoOverride.findMany.mockRejectedValueOnce(new Error('relation "permisos_override" does not exist'));
+    await expect(service.onModuleInit()).resolves.not.toThrow();
+    expect(service.rolesEfectivos(CLAVE_EJEMPLO, DEFAULT_EJEMPLO)).toEqual(DEFAULT_EJEMPLO);
+  });
+
   it('rolesEfectivos() devuelve el override en vez del default cuando existe uno cargado', async () => {
     const { service } = crearService([{ clave: CLAVE_EJEMPLO, roles: ['ADMINISTRADOR'] }]);
     await service.onModuleInit();
