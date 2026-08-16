@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Canal } from '@prisma/client';
 import { AfiliacionService } from './afiliacion.service';
 import { CrearAsesorDto } from './dto/crear-asesor.dto';
+import { ReasignarLiderDto } from './dto/reasignar-lider.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
@@ -46,5 +47,18 @@ export class AfiliacionController {
   @Roles('ADMINISTRADOR')
   confirmar(@Body() dto: { filas: any[] }, @Req() req: any) {
     return this.afiliacionService.confirmarCargaMasiva(dto.filas, req.user.id);
+  }
+
+  // EP-02: cambiar de líder a un asesor de Comercio Minorista, con rastro.
+  @Patch(':asesorId/lider')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
+  reasignarLider(@Param('asesorId') asesorId: string, @Body() dto: ReasignarLiderDto, @Req() req: any) {
+    return this.afiliacionService.reasignarLider(asesorId, dto.liderId, req.user.id, dto.motivo);
+  }
+
+  @Get(':asesorId/historial-asignaciones')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
+  historialAsignaciones(@Param('asesorId') asesorId: string) {
+    return this.afiliacionService.historialAsignaciones(asesorId);
   }
 }

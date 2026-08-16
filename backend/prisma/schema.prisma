@@ -204,6 +204,7 @@ model User {
   gerenteComercial GerenteComercial?
   auditLogs    AuditLog[] @relation("ActorAuditLog")
   tokensAcceso TokenAcceso[]
+  reasignacionesRealizadas HistorialAsignacionAsesor[] @relation("ActorHistorialAsignacion")
 
   @@map("users")
 }
@@ -249,10 +250,32 @@ model Asesor {
   carts            Cart[]
   pedidos          Order[]
   clientes         Cliente[] // EP-21 — sus clientes finales en canales SALONES_BELLEZA/RETAIL
+  historialAsignaciones HistorialAsignacionAsesor[] // EP-02 — cada cambio de líder de este asesor
 
   createdAt        DateTime     @default(now())
 
   @@map("asesores")
+}
+
+// EP-02: cada vez que un asesor de Comercio Minorista cambia de líder
+// (AfiliacionService.reasignarLider) queda un registro acá, además de
+// actualizar Asesor.liderId. liderAnteriorId/liderNuevoId son snapshots
+// (String simple, sin FK) a propósito, igual que AuditLog.entidadId — si
+// un líder se da de baja después, el historial sigue mostrando quién era
+// en ese momento en vez de romperse o quedar en null.
+model HistorialAsignacionAsesor {
+  id              String   @id @default(cuid())
+  asesorId        String
+  asesor          Asesor   @relation(fields: [asesorId], references: [id])
+  liderAnteriorId String?
+  liderNuevoId    String?
+  actorId         String
+  actor           User     @relation("ActorHistorialAsignacion", fields: [actorId], references: [id])
+  motivo          String?
+  createdAt       DateTime @default(now())
+
+  @@index([asesorId])
+  @@map("historial_asignaciones_asesor")
 }
 
 model Direccion {
@@ -916,6 +939,23 @@ model AuditLog {
   createdAt       DateTime @default(now())
 
   @@map("audit_logs")
+}
+
+// EP-01: overrides de roles por endpoint, editables desde Gestión →
+// Permisos sin pasar por un deploy. clave = "<Controller>.<metodo>" (mismo
+// par que arma RolesGuard en tiempo de ejecución vía
+// context.getClass().name/context.getHandler().name — ver
+// PermisosService.rolesEfectivos y el catálogo estático en
+// permisos-catalogo.ts). Tabla vacía = comportamiento idéntico al @Roles()
+// compilado en cada controller; solo lo que un ADMINISTRADOR edita a
+// propósito aparece acá.
+model PermisoOverride {
+  clave            String       @id
+  roles            RolUsuario[]
+  actualizadoPorId String?
+  updatedAt        DateTime     @updatedAt
+
+  @@map("permisos_override")
 }
 
 // Catálogo digital editorial (tipo flipbook Yanbal) — se arma por fuera de

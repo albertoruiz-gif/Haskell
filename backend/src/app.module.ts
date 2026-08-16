@@ -24,6 +24,7 @@ import { PremiosModule } from './modules/premios/premios.module';
 import { LibroReclamacionesModule } from './modules/libro-reclamaciones/libro-reclamaciones.module';
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { ClientesModule } from './modules/clientes/clientes.module';
+import { PermisosModule } from './modules/permisos/permisos.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ScopeGuard } from './common/guards/scope.guard';
@@ -44,6 +45,9 @@ import { ScopeGuard } from './common/guards/scope.guard';
     // toca); el login tiene su propio limite mas estricto via @Throttle,
     // ver AuthController.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
+    // Global — RolesGuard (APP_GUARD más abajo, y también usado directo vía
+    // @UseGuards en varios controllers) depende de PermisosService.
+    PermisosModule,
     AuthModule,
     AfiliacionModule,
     PricingModule,

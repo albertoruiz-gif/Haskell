@@ -14,6 +14,20 @@ type Asesor = {
   canal: string;
   user: { id: string; email: string; nombre: string; activo: boolean };
   direcciones: { distrito: string; departamento: string; provincia: string; pais: string }[];
+  lider: { id: string; user: { nombre: string } } | null;
+};
+
+type Lider = { id: string; user: { nombre: string; activo: boolean } };
+
+// EP-02: quién cambió a quién de líder y cuándo — antes Asesor.liderId solo
+// guardaba el estado actual, sin rastro de reasignaciones previas.
+type HistorialItem = {
+  id: string;
+  liderAnterior: string | null;
+  liderNuevo: string | null;
+  actor: string;
+  motivo: string | null;
+  createdAt: string;
 };
 
 const FORM_INICIAL = {
@@ -35,6 +49,7 @@ const FORM_INICIAL = {
 
 export function AsesoresTab() {
   const [asesores, setAsesores] = useState<Asesor[]>([]);
+  const [lideres, setLideres] = useState<Lider[]>([]);
   const [form, setForm] = useState(FORM_INICIAL);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -48,8 +63,21 @@ export function AsesoresTab() {
     }
   }
 
+  // Solo se usa para armar el selector de reasignación (EP-02) — un asesor
+  // sin líderes cargados igual puede verse en la lista, solo no puede
+  // reasignarse hasta que exista al menos uno.
+  async function cargarLideres() {
+    try {
+      const data = await apiFetch<Lider[]>('/lideres');
+      setLideres(data.filter((l) => l.user.activo));
+    } catch {
+      // No bloquea la pantalla — solo no aparece el selector de reasignación.
+    }
+  }
+
   useEffect(() => {
     cargar();
+    cargarLideres();
   }, []);
 
   function setCampo(campo: keyof typeof FORM_INICIAL, valor: string) {
@@ -116,6 +144,53 @@ export function AsesoresTab() {
     }
   }
 
+  // EP-02: reasignar líder + ver historial de reasignaciones — solo aplica
+  // a asesores de Comercio Minorista (los únicos con líder asignado).
+  const [nuevoLiderPorAsesor, setNuevoLiderPorAsesor] = useState<Record<string, string>>({});
+  const [motivoPorAsesor, setMotivoPorAsesor] = useState<Record<string, string>>({});
+  const [reasignandoId, setReasignandoId] = useState<string | null>(null);
+  const [historialAbiertoId, setHistorialAbiertoId] = useState<string | null>(null);
+  const [historialPorAsesor, setHistorialPorAsesor] = useState<Record<string, HistorialItem[]>>({});
+  const [cargandoHistorial, setCargandoHistorial] = useState(false);
+
+  async function reasignarLider(asesorId: string) {
+    const liderId = nuevoLiderPorAsesor[asesorId];
+    if (!liderId) return;
+    setError(null);
+    setReasignandoId(asesorId);
+    try {
+      await apiFetch(`/afiliacion/${asesorId}/lider`, {
+        method: 'PATCH',
+        body: { liderId, motivo: motivoPorAsesor[asesorId] || undefined },
+      });
+      setNuevoLiderPorAsesor((s) => ({ ...s, [asesorId]: '' }));
+      setMotivoPorAsesor((s) => ({ ...s, [asesorId]: '' }));
+      await cargar();
+      if (historialAbiertoId === asesorId) await toggleHistorial(asesorId, true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo reasignar el líder.');
+    } finally {
+      setReasignandoId(null);
+    }
+  }
+
+  async function toggleHistorial(asesorId: string, forzarRecarga = false) {
+    if (historialAbiertoId === asesorId && !forzarRecarga) {
+      setHistorialAbiertoId(null);
+      return;
+    }
+    setHistorialAbiertoId(asesorId);
+    setCargandoHistorial(true);
+    try {
+      const data = await apiFetch<HistorialItem[]>(`/afiliacion/${asesorId}/historial-asignaciones`);
+      setHistorialPorAsesor((h) => ({ ...h, [asesorId]: data }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cargar el historial.');
+    } finally {
+      setCargandoHistorial(false);
+    }
+  }
+
   return (
     <div className="space-y-3 lg:grid lg:grid-cols-[360px_1fr] lg:items-start lg:gap-4 lg:space-y-0">
       <form onSubmit={onSubmit} className="space-y-2 rounded-card bg-white p-3 shadow-sm">
@@ -177,6 +252,55 @@ export function AsesoresTab() {
                 </button>
               )}
             </div>
+
+            {/* EP-02: reasignar líder + ver historial — solo Comercio Minorista tiene líder. */}
+            {a.canal === 'COMERCIO_MINORISTA' && (
+              <div className="mt-2 border-t border-musgo/10 pt-2">
+                <p className="text-xs text-bosque/60">
+                  Líder actual: <span className="font-medium text-bosque">{a.lider?.user.nombre ?? 'Sin líder'}</span>
+                </p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <select
+                    value={nuevoLiderPorAsesor[a.id] ?? ''}
+                    onChange={(e) => setNuevoLiderPorAsesor((s) => ({ ...s, [a.id]: e.target.value }))}
+                    className="flex-1 rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                  >
+                    <option value="">Reasignar a…</option>
+                    {lideres.filter((l) => l.id !== a.lider?.id).map((l) => (
+                      <option key={l.id} value={l.id}>{l.user.nombre}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => reasignarLider(a.id)}
+                    disabled={!nuevoLiderPorAsesor[a.id] || reasignandoId === a.id}
+                    className="rounded-pill bg-crema px-2 py-1 text-xs font-medium text-acento disabled:opacity-40"
+                  >
+                    {reasignandoId === a.id ? '…' : 'Reasignar'}
+                  </button>
+                </div>
+                <input
+                  placeholder="Motivo (opcional)"
+                  value={motivoPorAsesor[a.id] ?? ''}
+                  onChange={(e) => setMotivoPorAsesor((s) => ({ ...s, [a.id]: e.target.value }))}
+                  className="mt-1 w-full rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                />
+                <button onClick={() => toggleHistorial(a.id)} className="mt-1 text-[11px] text-bosque/50 underline">
+                  {historialAbiertoId === a.id ? 'Ocultar historial' : 'Ver historial de reasignaciones'}
+                </button>
+                {historialAbiertoId === a.id && (
+                  <div className="mt-1 space-y-1 rounded-lg bg-crema/50 p-2 text-[11px] text-bosque/70">
+                    {cargandoHistorial && <p>Cargando…</p>}
+                    {!cargandoHistorial && (historialPorAsesor[a.id]?.length ?? 0) === 0 && <p>Sin cambios registrados.</p>}
+                    {!cargandoHistorial && historialPorAsesor[a.id]?.map((h) => (
+                      <p key={h.id}>
+                        {new Date(h.createdAt).toLocaleDateString('es-PE')} — {h.liderAnterior ?? 'sin líder'} → {h.liderNuevo ?? 'sin líder'} (por {h.actor}
+                        {h.motivo ? `, motivo: ${h.motivo}` : ''})
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
         {asesores.length === 0 && <p className="text-xs text-bosque/50">Todavía no hay asesores.</p>}

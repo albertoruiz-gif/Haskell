@@ -19,6 +19,7 @@ import { ConfiguracionTab } from '../../components/admin/ConfiguracionTab';
 import { AdministracionTab } from '../../components/admin/AdministracionTab';
 import { CreditosTab } from '../../components/admin/CreditosTab';
 import { DescuentosTab } from '../../components/admin/DescuentosTab';
+import { PermisosTab } from '../../components/admin/PermisosTab';
 
 const TABS = [
   { id: 'pagos', label: 'Pagos' },
@@ -36,6 +37,10 @@ const TABS = [
   // ADMINISTRADOR (más amplio que "creditos", que es solo Comercial).
   { id: 'descuentos', label: 'Descuentos' },
   { id: 'configuracion', label: 'Configuración' },
+  // EP-01: matriz de permisos por endpoint — solo ADMINISTRADOR, mismo
+  // criterio que "administracion" (controla la seguridad del resto del
+  // sistema, no tiene sentido delegarla más abajo).
+  { id: 'permisos', label: 'Permisos' },
   // EP-18: cuentas administrativas (2FA) — solo ADMINISTRADOR, filtrado en
   // el render de abajo. El backend también lo exige; esto es nada más para
   // no mostrarle a otros roles un botón que les va a devolver 403.
@@ -55,6 +60,7 @@ export default function GestionPage() {
   const puedeGestionarDescuentos = rol === 'ADMINISTRADOR' || rol === 'GERENTE_COMERCIAL' || rol === 'GERENTE_GENERAL';
   const tabsVisibles = TABS.filter((t) => {
     if (t.id === 'administracion') return esAdministrador;
+    if (t.id === 'permisos') return esAdministrador;
     if (t.id === 'creditos') return puedeGestionarCreditos;
     if (t.id === 'descuentos') return puedeGestionarDescuentos;
     return true;
@@ -143,6 +149,7 @@ export default function GestionPage() {
       {tab === 'creditos' && puedeGestionarCreditos && <CreditosTab />}
       {tab === 'descuentos' && puedeGestionarDescuentos && <DescuentosTab />}
       {tab === 'configuracion' && <ConfiguracionTab />}
+      {tab === 'permisos' && esAdministrador && <PermisosTab />}
       {tab === 'administracion' && esAdministrador && <AdministracionTab />}
     </div>
   );

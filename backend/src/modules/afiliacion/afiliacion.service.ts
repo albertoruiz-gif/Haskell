@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import * as bcrypt from 'bcrypt';
 import { Canal } from '@prisma/client';
@@ -112,6 +112,9 @@ export class AfiliacionService {
       include: {
         user: { select: { id: true, email: true, nombre: true, activo: true } },
         direcciones: true,
+        // EP-02: la pantalla de administración necesita mostrar quién es el
+        // líder actual de cada asesor para poder reasignarlo.
+        lider: { select: { id: true, user: { select: { nombre: true } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -249,5 +252,69 @@ export class AfiliacionService {
     });
 
     return { creados: creados.length };
+  }
+
+  // EP-02: cambia el líder a cargo de un asesor de Comercio Minorista, y
+  // deja registro en HistorialAsignacionAsesor (Asesor.liderId solo guarda
+  // el estado actual — sin esto no había forma de saber quién tuvo a cargo
+  // a un asesor antes, ni cuándo ni quién hizo el cambio).
+  async reasignarLider(asesorId: string, nuevoLiderId: string, actorId: string, motivo?: string) {
+    const asesor = await this.prisma.asesor.findUnique({ where: { id: asesorId } });
+    if (!asesor) throw new NotFoundException('Asesor no encontrado.');
+    if (asesor.canal !== 'COMERCIO_MINORISTA') {
+      throw new BadRequestException('Solo los asesores de Comercio Minorista tienen líder asignado.');
+    }
+
+    const nuevoLider = await this.prisma.lider.findUnique({ where: { id: nuevoLiderId }, include: { user: true } });
+    if (!nuevoLider) throw new NotFoundException('Líder no encontrado.');
+    if (!nuevoLider.user.activo) throw new BadRequestException('Ese líder está inactivo.');
+    if (asesor.liderId === nuevoLiderId) {
+      throw new BadRequestException('El asesor ya está asignado a ese líder.');
+    }
+
+    const liderAnteriorId = asesor.liderId;
+    const [asesorActualizado] = await this.prisma.$transaction([
+      this.prisma.asesor.update({ where: { id: asesorId }, data: { liderId: nuevoLiderId } }),
+      this.prisma.historialAsignacionAsesor.create({
+        data: { asesorId, liderAnteriorId, liderNuevoId: nuevoLiderId, actorId, motivo },
+      }),
+    ]);
+    return asesorActualizado;
+  }
+
+  // EP-02: historial de reasignaciones de un asesor, con nombres resueltos
+  // (líder anterior/nuevo, quién hizo el cambio) — HistorialAsignacionAsesor
+  // solo guarda IDs sueltos a propósito (snapshot, no FK dura, ver schema),
+  // así que la resolución de nombres se hace acá, no en la base.
+  async historialAsignaciones(asesorId: string) {
+    const historial = await this.prisma.historialAsignacionAsesor.findMany({
+      where: { asesorId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (historial.length === 0) return [];
+
+    const liderIds = Array.from(
+      new Set(historial.flatMap((h) => [h.liderAnteriorId, h.liderNuevoId]).filter((id): id is string => !!id)),
+    );
+    const lideres = liderIds.length
+      ? await this.prisma.lider.findMany({
+          where: { id: { in: liderIds } },
+          include: { user: { select: { nombre: true } } },
+        })
+      : [];
+    const nombrePorLiderId = new Map(lideres.map((l) => [l.id, l.user.nombre]));
+
+    const actorIds = Array.from(new Set(historial.map((h) => h.actorId)));
+    const actores = await this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, nombre: true } });
+    const nombrePorActorId = new Map(actores.map((a) => [a.id, a.nombre]));
+
+    return historial.map((h) => ({
+      id: h.id,
+      liderAnterior: h.liderAnteriorId ? (nombrePorLiderId.get(h.liderAnteriorId) ?? 'Líder eliminado') : null,
+      liderNuevo: h.liderNuevoId ? (nombrePorLiderId.get(h.liderNuevoId) ?? 'Líder eliminado') : null,
+      actor: nombrePorActorId.get(h.actorId) ?? 'Usuario eliminado',
+      motivo: h.motivo,
+      createdAt: h.createdAt,
+    }));
   }
 }
