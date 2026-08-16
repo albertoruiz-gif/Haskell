@@ -20,6 +20,9 @@ type Cliente = {
   lineaCreditoAprobada: string | null;
   saldoUtilizado: string;
   solicitudesCredito?: { id: string; estado: string; lineaSolicitada: string }[];
+  // EP-04 — solo aparecen acá las PENDIENTE o APROBADA-sin-usar (ver
+  // ClientesService.listar) — una vez usada en un pedido, deja de listarse.
+  solicitudesDescuento?: { id: string; estado: string; porcentaje: string }[];
 };
 
 const ESTADO_LABEL: Record<string, string> = { ACTIVO: 'Activo', MOROSO: 'Moroso — solo contado', BLOQUEADO: 'Bloqueado' };
@@ -38,6 +41,9 @@ export default function MisClientesPage() {
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [montoSolicitud, setMontoSolicitud] = useState<Record<string, string>>({});
+  // EP-04 — % y motivo del descuento por volumen a solicitar, por cliente.
+  const [descuentoPct, setDescuentoPct] = useState<Record<string, string>>({});
+  const [descuentoMotivo, setDescuentoMotivo] = useState<Record<string, string>>({});
 
   const habilitado = canal === 'SALONES_BELLEZA' || canal === 'RETAIL';
 
@@ -87,6 +93,26 @@ export default function MisClientesPage() {
       await cargar();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo enviar la solicitud de crédito.');
+    }
+  }
+
+  async function solicitarDescuento(clienteId: string) {
+    setError(null);
+    const porcentaje = Number(descuentoPct[clienteId]);
+    if (!porcentaje || porcentaje <= 0 || porcentaje > 100) {
+      setError('Ingresá un porcentaje de descuento válido (mayor a 0).');
+      return;
+    }
+    try {
+      await apiFetch(`/clientes/${clienteId}/solicitudes-descuento`, {
+        method: 'POST',
+        body: { porcentaje, motivo: descuentoMotivo[clienteId] || undefined },
+      });
+      setDescuentoPct((m) => ({ ...m, [clienteId]: '' }));
+      setDescuentoMotivo((m) => ({ ...m, [clienteId]: '' }));
+      await cargar();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo enviar la solicitud de descuento.');
     }
   }
 
@@ -163,6 +189,46 @@ export default function MisClientesPage() {
                     </button>
                   </div>
                 )}
+
+                {/* EP-04 — descuento por volumen: negociado fuera de la app con
+                    Gerencia Comercial, aprobado por pedido puntual (uso único). */}
+                <div className="mt-2 border-t border-musgo/10 pt-2">
+                  {(() => {
+                    const pendiente = c.solicitudesDescuento?.find((s) => s.estado === 'PENDIENTE');
+                    const aprobadas = c.solicitudesDescuento?.filter((s) => s.estado === 'APROBADA') ?? [];
+                    if (pendiente) {
+                      return <p className="text-xs text-promo">Descuento del {Number(pendiente.porcentaje)}% solicitado — esperando aprobación.</p>;
+                    }
+                    return (
+                      <>
+                        {aprobadas.length > 0 && (
+                          <p className="text-xs text-bosque/70">
+                            Descuento aprobado disponible: {aprobadas.map((s) => `${Number(s.porcentaje)}%`).join(', ')} — se aplica al armar el próximo pedido de este cliente en el Carrito.
+                          </p>
+                        )}
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="number" min="0" max="100" step="0.5"
+                            placeholder="% descuento"
+                            value={descuentoPct[c.id] ?? ''}
+                            onChange={(e) => setDescuentoPct((m) => ({ ...m, [c.id]: e.target.value }))}
+                            className="w-24 rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Motivo (opcional)"
+                            value={descuentoMotivo[c.id] ?? ''}
+                            onChange={(e) => setDescuentoMotivo((m) => ({ ...m, [c.id]: e.target.value }))}
+                            className="flex-1 rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                          />
+                          <button onClick={() => solicitarDescuento(c.id)} className="rounded-pill bg-crema px-3 py-1.5 text-xs font-medium text-acento">
+                            Pedir descuento
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             );
           })}

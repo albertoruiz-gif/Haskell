@@ -18,6 +18,7 @@ import { PremiosTab } from '../../components/admin/PremiosTab';
 import { ConfiguracionTab } from '../../components/admin/ConfiguracionTab';
 import { AdministracionTab } from '../../components/admin/AdministracionTab';
 import { CreditosTab } from '../../components/admin/CreditosTab';
+import { DescuentosTab } from '../../components/admin/DescuentosTab';
 
 const TABS = [
   { id: 'pagos', label: 'Pagos' },
@@ -31,6 +32,9 @@ const TABS = [
   // ADMINISTRADOR, filtrado abajo igual que "administracion". El backend
   // también lo exige; esto es solo para no ofrecer un botón que 403ea.
   { id: 'creditos', label: 'Créditos' },
+  // EP-04: descuento por volumen — GERENTE_COMERCIAL/GERENTE_GENERAL/
+  // ADMINISTRADOR (más amplio que "creditos", que es solo Comercial).
+  { id: 'descuentos', label: 'Descuentos' },
   { id: 'configuracion', label: 'Configuración' },
   // EP-18: cuentas administrativas (2FA) — solo ADMINISTRADOR, filtrado en
   // el render de abajo. El backend también lo exige; esto es nada más para
@@ -48,9 +52,11 @@ export default function GestionPage() {
   const rol = getUsuario()?.rol;
   const esAdministrador = rol === 'ADMINISTRADOR';
   const puedeGestionarCreditos = rol === 'ADMINISTRADOR' || rol === 'GERENTE_COMERCIAL';
+  const puedeGestionarDescuentos = rol === 'ADMINISTRADOR' || rol === 'GERENTE_COMERCIAL' || rol === 'GERENTE_GENERAL';
   const tabsVisibles = TABS.filter((t) => {
     if (t.id === 'administracion') return esAdministrador;
     if (t.id === 'creditos') return puedeGestionarCreditos;
+    if (t.id === 'descuentos') return puedeGestionarDescuentos;
     return true;
   });
   // Compartido entre Catálogo/Precios y Ofertas: antes cada pestaña tenía su
@@ -135,6 +141,7 @@ export default function GestionPage() {
       {tab === 'transporte' && <TransporteTab />}
       {tab === 'premios' && <PremiosTab />}
       {tab === 'creditos' && puedeGestionarCreditos && <CreditosTab />}
+      {tab === 'descuentos' && puedeGestionarDescuentos && <DescuentosTab />}
       {tab === 'configuracion' && <ConfiguracionTab />}
       {tab === 'administracion' && esAdministrador && <AdministracionTab />}
     </div>

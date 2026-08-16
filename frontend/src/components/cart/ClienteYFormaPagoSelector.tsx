@@ -16,19 +16,25 @@ type Cliente = {
   estado: 'ACTIVO' | 'MOROSO' | 'BLOQUEADO';
   lineaCreditoAprobada: string | null;
   saldoUtilizado: string;
+  // EP-04 — solo llegan acá las APROBADA-sin-usar (ver ClientesService.listar).
+  solicitudesDescuento?: { id: string; porcentaje: string }[];
 };
 
 export function ClienteYFormaPagoSelector({
   clienteId,
   formaPago,
+  solicitudDescuentoId,
   onCambiarCliente,
   onCambiarFormaPago,
+  onCambiarDescuento,
   totalPedido,
 }: {
   clienteId: string;
   formaPago: FormaPago;
+  solicitudDescuentoId: string;
   onCambiarCliente: (id: string) => void;
   onCambiarFormaPago: (fp: FormaPago) => void;
+  onCambiarDescuento: (id: string) => void;
   totalPedido: number;
 }) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -76,6 +82,23 @@ export function ClienteYFormaPagoSelector({
               ? `Cupo de crédito disponible: S/ ${cupoDisponible.toFixed(2)}`
               : 'Este cliente todavía no tiene línea de crédito aprobada — solo puede pagar al contado.'}
         </p>
+      )}
+
+      {/* EP-04 — descuento por volumen ya aprobado para este cliente (uso único). */}
+      {cliente && (cliente.solicitudesDescuento?.length ?? 0) > 0 && (
+        <div className="mt-2">
+          <p className="text-sm font-medium text-bosque">Descuento aprobado</p>
+          <select
+            value={solicitudDescuentoId}
+            onChange={(e) => onCambiarDescuento(e.target.value)}
+            className="mt-1 w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
+          >
+            <option value="">Sin descuento</option>
+            {cliente.solicitudesDescuento!.map((s) => (
+              <option key={s.id} value={s.id}>{Number(s.porcentaje)}% de descuento</option>
+            ))}
+          </select>
+        </div>
       )}
 
       <p className="mt-3 text-sm font-medium text-bosque">Forma de pago</p>

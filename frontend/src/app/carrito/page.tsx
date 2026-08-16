@@ -26,7 +26,19 @@ import { ClienteYFormaPagoSelector, FormaPago } from '../../components/cart/Clie
 // búsqueda exacta de nombre/SKU, ver catalog.controller.ts) — no se puede
 // agregar al carrito todavía.
 type ProductoBusqueda = { id: string; sku: string; nombre: string | null; precioAsesor: number | null; stockDisponible?: number };
-type Pedido = { id: string; numero: number; canal: string; referenciaWeb: string; estado: string; formaPago: FormaPago };
+type Pedido = {
+  id: string;
+  numero: number;
+  canal: string;
+  referenciaWeb: string;
+  estado: string;
+  formaPago: FormaPago;
+  // EP-04 — desglose real que calculó el servidor, para mostrar en la confirmación.
+  totalCulqi: string;
+  descuentoMonto: string;
+  igv: string;
+  valorVenta: string;
+};
 
 declare global {
   interface Window {
@@ -56,6 +68,10 @@ export default function CarritoPage() {
   const requiereCliente = canal === 'SALONES_BELLEZA' || canal === 'RETAIL';
   const [clienteId, setClienteId] = useState('');
   const [formaPago, setFormaPago] = useState<FormaPago>('CONTADO_CULQI');
+  const [solicitudDescuentoId, setSolicitudDescuentoId] = useState('');
+  // Pedido ya confirmado (AL_CREDITO o, más adelante, cualquiera) — se usa
+  // para mostrar el desglose real de IGV/descuento que calculó el servidor.
+  const [pedidoConfirmado, setPedidoConfirmado] = useState<Pedido | null>(null);
   // Pedido creado por depósito bancario (PENDIENTE_PAGO), esperando que el
   // Asesor cargue el número de operación una vez que el cliente depositó.
   const [pedidoDeposito, setPedidoDeposito] = useState<Pedido | null>(null);
@@ -98,11 +114,12 @@ export default function CarritoPage() {
         method: 'POST',
         body: {
           items: items.map((i) => ({ catalogLineId: i.catalogLineId, cantidad: i.cantidad })),
-          ...(requiereCliente && clienteId ? { clienteId, formaPago } : {}),
+          ...(requiereCliente && clienteId ? { clienteId, formaPago, solicitudDescuentoId: solicitudDescuentoId || undefined } : {}),
         },
       });
       vaciar();
       if (pedido.formaPago === 'AL_CREDITO') {
+        setPedidoConfirmado(pedido);
         setPedidoOk(formatearNumeroPedido(pedido.canal, pedido.numero) ?? pedido.referenciaWeb);
       } else if (pedido.formaPago === 'CONTADO_DEPOSITO') {
         setPedidoDeposito(pedido);
@@ -179,6 +196,16 @@ export default function CarritoPage() {
         <div className="space-y-3 rounded-card bg-white p-4 text-center shadow-sm">
           <p className="text-lg font-medium text-bosque">¡Pedido pagado!</p>
           <p className="text-sm text-bosque/60">Referencia {pedidoOk}. El pedido ya está confirmado y en camino.</p>
+          {pedidoConfirmado && (
+            <div className="mx-auto max-w-xs space-y-1 rounded-card bg-crema p-3 text-left text-xs text-bosque/70">
+              {Number(pedidoConfirmado.descuentoMonto) > 0 && (
+                <div className="flex justify-between"><span>Descuento aplicado</span><span>− S/ {Number(pedidoConfirmado.descuentoMonto).toFixed(2)}</span></div>
+              )}
+              <div className="flex justify-between"><span>Valor de venta</span><span>S/ {Number(pedidoConfirmado.valorVenta).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>IGV (18%)</span><span>S/ {Number(pedidoConfirmado.igv).toFixed(2)}</span></div>
+              <div className="flex justify-between border-t border-musgo/20 pt-1 font-medium text-bosque"><span>Total</span><span>S/ {Number(pedidoConfirmado.totalCulqi).toFixed(2)}</span></div>
+            </div>
+          )}
           <button onClick={() => router.push('/catalogo')} className="w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">
             Volver al catálogo
           </button>
@@ -358,11 +385,14 @@ export default function CarritoPage() {
               <ClienteYFormaPagoSelector
                 clienteId={clienteId}
                 formaPago={formaPago}
+                solicitudDescuentoId={solicitudDescuentoId}
                 onCambiarCliente={(id) => {
                   setClienteId(id);
+                  setSolicitudDescuentoId(''); // el descuento es por cliente, no queda pegado al cambiar
                   if (!id) setFormaPago('CONTADO_CULQI'); // sin cliente, solo Yape (RN EP-21)
                 }}
                 onCambiarFormaPago={setFormaPago}
+                onCambiarDescuento={setSolicitudDescuentoId}
                 totalPedido={total}
               />
             ) : (

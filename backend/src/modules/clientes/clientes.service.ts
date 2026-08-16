@@ -91,10 +91,18 @@ export class ClientesService {
   async listar(filtro: { asesorId?: string }) {
     return this.prisma.cliente.findMany({
       where: filtro.asesorId ? { asesorId: filtro.asesorId } : undefined,
-      // Solo la solicitud PENDIENTE (si hay) — el frontend la usa para no
-      // dejar mandar una segunda solicitud mientras la primera se revisa,
-      // sin necesitar el historial completo en la vista de lista.
-      include: { solicitudesCredito: { where: { estado: 'PENDIENTE' } } },
+      // Solo lo que el frontend necesita para decidir qué mostrar/habilitar
+      // sin pedir el historial completo: la solicitud de crédito PENDIENTE
+      // (si hay), y las de descuento PENDIENTE o APROBADA-sin-usar (EP-04
+      // — "sin usar" = todavía no está ligada a ningún Order, ver el
+      // "pedido: null" del filtro).
+      include: {
+        solicitudesCredito: { where: { estado: 'PENDIENTE' } },
+        solicitudesDescuento: {
+          where: { OR: [{ estado: 'PENDIENTE' }, { estado: 'APROBADA', pedido: null }] },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
