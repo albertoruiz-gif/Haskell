@@ -170,6 +170,7 @@ export class OperacionesService {
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.EN_RUTA } });
     const actualizada = await this.prisma.entrega.update({ where: { orderId }, data: { estado: EstadoEntrega.EN_RUTA } });
     await this.sincronizarEstadoPedidoAOdoo(orderId);
+    await this.notificarAsesor(orderId, 'Tu pedido salió a reparto', ['Tu pedido ya está en camino hacia la dirección de entrega.']);
     return actualizada;
   }
 
@@ -189,6 +190,7 @@ export class OperacionesService {
       data: { estado: EstadoEntrega.ENTREGADO, montoPago: entregaActual.transportista.tarifaPorEntrega, ...data },
     });
     await this.sincronizarEstadoPedidoAOdoo(orderId);
+    await this.notificarAsesor(orderId, 'Tu pedido fue entregado', [`Entregado a: ${data.receptor}.`]);
     return actualizada;
   }
 
@@ -221,6 +223,10 @@ export class OperacionesService {
       data: { estado: EstadoEntrega.FALLIDO, motivoFallo: motivo, observaciones },
     });
     await this.sincronizarEstadoPedidoAOdoo(orderId);
+    await this.notificarAsesor(orderId, 'Hubo un problema con la entrega de tu pedido', [
+      `Motivo: ${motivo}.`,
+      'Nos vamos a poner en contacto para coordinar un nuevo intento de entrega.',
+    ]);
     return actualizada;
   }
 
@@ -262,6 +268,42 @@ export class OperacionesService {
       },
     });
     await this.sincronizarEstadoPedidoAOdoo(orderId);
+    await this.notificarAsesor(orderId, 'Tu pedido tiene una nueva fecha de entrega', [
+      `Reprogramamos la entrega para el ${data.fechaReprogramada.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: '2-digit' })}.`,
+      ...(data.motivo ? [`Motivo: ${data.motivo}.`] : []),
+    ]);
     return actualizada;
+  }
+
+  /**
+   * EP-12: notificación proactiva por correo cuando cambia el estado de la
+   * entrega — al Asesor que hizo el pedido (no hay un "cliente final"
+   * propio en COMERCIO_MINORISTA; en SALONES_BELLEZA/RETAIL el Asesor es
+   * quien vende y espera la entrega para su Cliente, así que sigue siendo
+   * el destinatario correcto). Mismo canal que ya usa AuthService para
+   * activación/recuperación de clave: Odoo como relay de correo saliente
+   * (ver OdooClient.enviarCorreo — AWS SES nunca se conectó a ningún flujo
+   * real y se descartó del todo, no es "sandbox esperando salir" como decía
+   * un comentario viejo, ver docs/LECCIONES_APRENDIDAS_INTEGRACIONES.md §4).
+   * Best-effort: si el correo falla, nunca tumba el cambio de estado real
+   * que ya quedó guardado — solo se registra en el log.
+   */
+  private async notificarAsesor(orderId: string, asunto: string, parrafos: string[]) {
+    try {
+      const order = await this.prisma.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: { asesor: { include: { user: true } } },
+      });
+      const numero = formatearNumeroPedido(order.canal, order.numero);
+      const htmlCuerpo = `
+        <p>Hola ${order.asesor.user.nombre},</p>
+        <p>Novedades de tu pedido <strong>${numero}</strong>:</p>
+        ${parrafos.filter(Boolean).map((p) => `<p>${p}</p>`).join('')}
+        <p>Podés ver el detalle completo en Mis Ventas.</p>
+      `;
+      await this.odoo.enviarCorreo({ para: order.asesor.user.email, asunto, htmlCuerpo });
+    } catch (e) {
+      this.logger.warn(`No se pudo enviar la notificación de estado del pedido ${orderId}: ${e instanceof Error ? e.message : e}`);
+    }
   }
 }
