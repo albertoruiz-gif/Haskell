@@ -161,6 +161,16 @@ enum EstadoDeposito {
   RECHAZADO
 }
 
+// EP-21 — validación de un RegistroCobro (comprobante adjunto + revisión
+// manual) antes de que se aplique de verdad al saldo del cliente. Mismo
+// criterio que EstadoSolicitudCredito/EstadoSolicitudDescuento: quien
+// registra el cobro (Asesor u otro) nunca lo autoaprueba.
+enum EstadoCobro {
+  PENDIENTE
+  VALIDADO
+  RECHAZADO
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -760,20 +770,32 @@ model SolicitudDescuento {
 // Un registro por cada pago que el Cliente hace contra su deuda AL_CREDITO
 // acumulada — no está atado a un pedido puntual porque un cliente puede
 // pagar varios pedidos de una vez o parcialmente.
+//
+// EP-21 (2026-08-17): quien registra el cobro (típicamente el Asesor) ya
+// no lo aplica de una — nace en PENDIENTE con el comprobante adjunto, y
+// recién se descuenta de Cliente.saldoUtilizado cuando alguien de Gerencia
+// Comercial/Administración/Finanzas lo valida (ver ClientesService.validarCobro),
+// igual que ya pasa con SolicitudCredito/SolicitudDescuento.
 model RegistroCobro {
-  id              String   @id @default(cuid())
+  id              String      @id @default(cuid())
   clienteId       String
-  cliente         Cliente  @relation(fields: [clienteId], references: [id])
-  monto           Decimal  @db.Decimal(10, 2)
-  metodo          String   // "deposito" | "culqi" | "efectivo"
+  cliente         Cliente     @relation(fields: [clienteId], references: [id])
+  monto           Decimal     @db.Decimal(10, 2)
+  metodo          String      // "deposito" | "culqi" | "efectivo"
   numeroOperacion String?
   banco           String?
-  registradoPorId String   // User.id — Asesor o GerenteComercial
-  observaciones   String?  @db.Text
+  comprobanteUrl  String?
+  estado          EstadoCobro @default(PENDIENTE)
+  revisadoPorId   String?     // User.id de quien validó/rechazó
+  motivoRechazo   String?     @db.Text
+  resueltoEn      DateTime?
+  registradoPorId String      // User.id — Asesor o GerenteComercial
+  observaciones   String?     @db.Text
 
   createdAt       DateTime @default(now())
 
   @@index([clienteId])
+  @@index([estado])
   @@map("registros_cobro")
 }
 

@@ -24,7 +24,7 @@ describe('ClientesService', () => {
         findUniqueOrThrow: jest.fn(),
         update: jest.fn(),
       },
-      registroCobro: { create: jest.fn() },
+      registroCobro: { create: jest.fn(), findMany: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
       $transaction: jest.fn(),
       ...overrides,
     };
@@ -163,47 +163,131 @@ describe('ClientesService', () => {
     });
   });
 
-  describe('registrarCobro', () => {
-    it('reduce saldoUtilizado y reactiva a un cliente MOROSO cuando la deuda queda en 0', async () => {
+  describe('registrarCobro (EP-21, desde 2026-08-17: ya NO toca el saldo — nace PENDIENTE)', () => {
+    it('crea el registro en PENDIENTE sin tocar Cliente.saldoUtilizado', async () => {
       const { service, prisma } = crearService();
       prisma.cliente.findUniqueOrThrow.mockResolvedValue({ id: 'c1', saldoUtilizado: 300, estado: 'MOROSO' });
-      let dataGuardada: any;
-      prisma.$transaction.mockImplementation(async (cb: any) => {
-        const tx = {
-          registroCobro: { create: jest.fn().mockResolvedValue({ id: 'cobro-1' }) },
-          cliente: {
-            update: jest.fn().mockImplementation(({ data }: any) => {
-              dataGuardada = data;
-              return Promise.resolve({ id: 'c1', ...data });
-            }),
-          },
-        };
-        return cb(tx);
-      });
+      prisma.registroCobro.create.mockResolvedValue({ id: 'cobro-1', estado: 'PENDIENTE' });
 
-      await service.registrarCobro('c1', 'user-1', { monto: 300, metodo: 'deposito' });
-      expect(dataGuardada).toEqual({ saldoUtilizado: 0, estado: 'ACTIVO' });
+      const resultado = await service.registrarCobro('c1', 'user-1', { monto: 300, metodo: 'deposito' });
+
+      expect(resultado).toEqual({ id: 'cobro-1', estado: 'PENDIENTE' });
+      expect(prisma.registroCobro.create).toHaveBeenCalledWith({
+        data: { clienteId: 'c1', registradoPorId: 'user-1', monto: 300, metodo: 'deposito' },
+      });
+      expect(prisma.cliente.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('guarda comprobanteUrl cuando viene adjunto', async () => {
+      const { service, prisma } = crearService();
+      prisma.cliente.findUniqueOrThrow.mockResolvedValue({ id: 'c1', saldoUtilizado: 300, estado: 'ACTIVO' });
+      prisma.registroCobro.create.mockResolvedValue({ id: 'cobro-1' });
+
+      await service.registrarCobro('c1', 'user-1', { monto: 300, metodo: 'deposito', comprobanteUrl: '/uploads/cobros/x.jpg' });
+
+      expect(prisma.registroCobro.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ comprobanteUrl: '/uploads/cobros/x.jpg' }) }),
+      );
+    });
+  });
+
+  describe('validarCobro (EP-21)', () => {
+    it('rechaza validar un cobro que ya fue resuelto', async () => {
+      const { service, prisma } = crearService();
+      prisma.registroCobro.findUniqueOrThrow.mockResolvedValue({ id: 'cobro-1', estado: 'RECHAZADO', clienteId: 'c1', monto: 100 });
+
+      await expect(service.validarCobro('cobro-1', 'gerente-1')).rejects.toThrow(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('al validar, recién ahí reduce saldoUtilizado y reactiva a un cliente MOROSO cuando la deuda queda en 0', async () => {
+      const { service, prisma } = crearService();
+      prisma.registroCobro.findUniqueOrThrow.mockResolvedValue({ id: 'cobro-1', estado: 'PENDIENTE', clienteId: 'c1', monto: 300 });
+      prisma.cliente.findUniqueOrThrow.mockResolvedValue({ id: 'c1', saldoUtilizado: 300, estado: 'MOROSO' });
+      prisma.$transaction.mockResolvedValue([
+        { id: 'cobro-1', estado: 'VALIDADO' },
+        { id: 'c1', saldoUtilizado: 0, estado: 'ACTIVO' },
+      ]);
+
+      const resultado = await service.validarCobro('cobro-1', 'gerente-1');
+
+      expect(resultado).toEqual({ id: 'cobro-1', estado: 'VALIDADO' });
+      expect(prisma.$transaction).toHaveBeenCalledWith([
+        expect.objectContaining({}),
+        expect.objectContaining({}),
+      ]);
     });
 
     it('con un pago parcial, mantiene el estado del cliente tal cual está', async () => {
       const { service, prisma } = crearService();
+      prisma.registroCobro.findUniqueOrThrow.mockResolvedValue({ id: 'cobro-1', estado: 'PENDIENTE', clienteId: 'c1', monto: 100 });
       prisma.cliente.findUniqueOrThrow.mockResolvedValue({ id: 'c1', saldoUtilizado: 300, estado: 'MOROSO' });
-      let dataGuardada: any;
-      prisma.$transaction.mockImplementation(async (cb: any) => {
-        const tx = {
-          registroCobro: { create: jest.fn().mockResolvedValue({ id: 'cobro-1' }) },
-          cliente: {
-            update: jest.fn().mockImplementation(({ data }: any) => {
-              dataGuardada = data;
-              return Promise.resolve({ id: 'c1', ...data });
-            }),
-          },
-        };
-        return cb(tx);
+      let dataClienteGuardada: any;
+      prisma.$transaction.mockImplementation((ops: any[]) => {
+        // El segundo elemento del array es la promesa de cliente.update — en
+        // este mock no ejecutamos las promesas reales, solo inspeccionamos
+        // los args con los que se llamó a prisma.cliente.update más abajo.
+        return Promise.resolve([{ id: 'cobro-1', estado: 'VALIDADO' }, { id: 'c1' }]);
       });
 
-      await service.registrarCobro('c1', 'user-1', { monto: 100, metodo: 'deposito' });
-      expect(dataGuardada).toEqual({ saldoUtilizado: 200, estado: 'MOROSO' });
+      await service.validarCobro('cobro-1', 'gerente-1');
+
+      expect(prisma.cliente.update).toHaveBeenCalledWith({
+        where: { id: 'c1' },
+        data: { saldoUtilizado: 200, estado: 'MOROSO' },
+      });
+    });
+
+    it('nunca deja saldoUtilizado negativo (se recorta a 0)', async () => {
+      const { service, prisma } = crearService();
+      prisma.registroCobro.findUniqueOrThrow.mockResolvedValue({ id: 'cobro-1', estado: 'PENDIENTE', clienteId: 'c1', monto: 500 });
+      prisma.cliente.findUniqueOrThrow.mockResolvedValue({ id: 'c1', saldoUtilizado: 300, estado: 'ACTIVO' });
+      prisma.$transaction.mockResolvedValue([{ id: 'cobro-1' }, { id: 'c1' }]);
+
+      await service.validarCobro('cobro-1', 'gerente-1');
+
+      expect(prisma.cliente.update).toHaveBeenCalledWith({
+        where: { id: 'c1' },
+        data: { saldoUtilizado: 0, estado: 'ACTIVO' },
+      });
+    });
+  });
+
+  describe('rechazarCobro (EP-21)', () => {
+    it('rechaza rechazar un cobro que ya fue resuelto', async () => {
+      const { service, prisma } = crearService();
+      prisma.registroCobro.findUniqueOrThrow.mockResolvedValue({ id: 'cobro-1', estado: 'VALIDADO' });
+
+      await expect(service.rechazarCobro('cobro-1', 'gerente-1')).rejects.toThrow(BadRequestException);
+      expect(prisma.registroCobro.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza sin tocar Cliente.saldoUtilizado — nunca se había aplicado', async () => {
+      const { service, prisma } = crearService();
+      prisma.registroCobro.findUniqueOrThrow.mockResolvedValue({ id: 'cobro-1', estado: 'PENDIENTE', clienteId: 'c1' });
+      prisma.registroCobro.update.mockResolvedValue({ id: 'cobro-1', estado: 'RECHAZADO' });
+
+      await service.rechazarCobro('cobro-1', 'gerente-1', 'comprobante ilegible');
+
+      expect(prisma.registroCobro.update).toHaveBeenCalledWith({
+        where: { id: 'cobro-1' },
+        data: expect.objectContaining({ estado: 'RECHAZADO', revisadoPorId: 'gerente-1', motivoRechazo: 'comprobante ilegible' }),
+      });
+      expect(prisma.cliente.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listarCobros (EP-21)', () => {
+    it('filtra por estado cuando se pide', async () => {
+      const { service, prisma } = crearService();
+      prisma.registroCobro.findMany.mockResolvedValue([]);
+
+      await service.listarCobros({ estado: 'PENDIENTE' as any });
+
+      expect(prisma.registroCobro.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ estado: 'PENDIENTE' }) }),
+      );
     });
   });
 

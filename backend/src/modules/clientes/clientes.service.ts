@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { Canal, EstadoCliente, EstadoSolicitudCredito, EstadoSolicitudDescuento } from '@prisma/client';
+import { Canal, EstadoCliente, EstadoCobro, EstadoSolicitudCredito, EstadoSolicitudDescuento } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { OdooClient } from '../odoo/odoo.client';
 
@@ -102,6 +102,9 @@ export class ClientesService {
           where: { OR: [{ estado: 'PENDIENTE' }, { estado: 'APROBADA', pedido: null }] },
           orderBy: { createdAt: 'desc' },
         },
+        // EP-21 — para que el Asesor vea "cobro enviado, esperando validación"
+        // sin tener que abrir el detalle del cliente.
+        cobros: { where: { estado: 'PENDIENTE' }, orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -229,30 +232,68 @@ export class ClientesService {
     });
   }
 
-  // --- Cobranza ligera ---
+  // --- Cobranza ligera (EP-21, con validación desde 2026-08-17) ---
+  // Registrar un cobro ya NO lo aplica al saldo — nace PENDIENTE con el
+  // comprobante adjunto (si lo hay) y recién descuenta de
+  // Cliente.saldoUtilizado cuando alguien de Gerencia Comercial/
+  // Administración/Finanzas lo valida (validarCobro). Quien lo registra
+  // nunca lo autoaprueba, mismo criterio que SolicitudCredito/SolicitudDescuento.
 
   async registrarCobro(
     clienteId: string,
     registradoPorId: string,
-    data: { monto: number; metodo: string; numeroOperacion?: string; banco?: string; observaciones?: string },
+    data: { monto: number; metodo: string; numeroOperacion?: string; banco?: string; observaciones?: string; comprobanteUrl?: string },
   ) {
-    const cliente = await this.prisma.cliente.findUniqueOrThrow({ where: { id: clienteId } });
+    await this.prisma.cliente.findUniqueOrThrow({ where: { id: clienteId } });
+    return this.prisma.registroCobro.create({ data: { clienteId, registradoPorId, ...data } });
+  }
+
+  async listarCobros(filtro: { estado?: EstadoCobro; clienteId?: string }) {
+    return this.prisma.registroCobro.findMany({
+      where: { estado: filtro.estado, clienteId: filtro.clienteId },
+      include: { cliente: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async validarCobro(id: string, revisadoPorId: string) {
+    const cobro = await this.prisma.registroCobro.findUniqueOrThrow({ where: { id } });
+    if (cobro.estado !== EstadoCobro.PENDIENTE) {
+      throw new BadRequestException(`Este cobro ya fue resuelto (${cobro.estado}).`);
+    }
+    const cliente = await this.prisma.cliente.findUniqueOrThrow({ where: { id: cobro.clienteId } });
     // No se permite que un cobro mal ingresado deje saldoUtilizado negativo
     // (ej. registrar 500 cuando solo debía 300) — se recorta a 0, no revienta.
-    const nuevoSaldo = Math.max(0, Number(cliente.saldoUtilizado) - data.monto);
+    const nuevoSaldo = Math.max(0, Number(cliente.saldoUtilizado) - Number(cobro.monto));
 
-    return this.prisma.$transaction(async (tx) => {
-      const cobro = await tx.registroCobro.create({ data: { clienteId, registradoPorId, ...data } });
-      await tx.cliente.update({
-        where: { id: clienteId },
+    const [cobroValidado] = await this.prisma.$transaction([
+      this.prisma.registroCobro.update({
+        where: { id },
+        data: { estado: EstadoCobro.VALIDADO, revisadoPorId, resueltoEn: new Date() },
+      }),
+      this.prisma.cliente.update({
+        where: { id: cobro.clienteId },
         data: {
           saldoUtilizado: nuevoSaldo,
           // Si estaba MOROSO y ya cubrió toda la deuda, vuelve a ACTIVO solo.
           // BLOQUEADO no se levanta automático — ese es un paso manual aparte.
           estado: nuevoSaldo === 0 && cliente.estado === EstadoCliente.MOROSO ? EstadoCliente.ACTIVO : cliente.estado,
         },
-      });
-      return cobro;
+      }),
+    ]);
+    return cobroValidado;
+  }
+
+  async rechazarCobro(id: string, revisadoPorId: string, motivoRechazo?: string) {
+    const cobro = await this.prisma.registroCobro.findUniqueOrThrow({ where: { id } });
+    if (cobro.estado !== EstadoCobro.PENDIENTE) {
+      throw new BadRequestException(`Este cobro ya fue resuelto (${cobro.estado}).`);
+    }
+    // Nunca tocó el saldo (solo se aplica al validar) — rechazar es puramente
+    // dejar constancia, no hay nada que revertir.
+    return this.prisma.registroCobro.update({
+      where: { id },
+      data: { estado: EstadoCobro.RECHAZADO, revisadoPorId, motivoRechazo, resueltoEn: new Date() },
     });
   }
 

@@ -19,6 +19,7 @@ import { ConfiguracionTab } from '../../components/admin/ConfiguracionTab';
 import { AdministracionTab } from '../../components/admin/AdministracionTab';
 import { CreditosTab } from '../../components/admin/CreditosTab';
 import { DescuentosTab } from '../../components/admin/DescuentosTab';
+import { CobrosTab } from '../../components/admin/CobrosTab';
 import { PermisosTab } from '../../components/admin/PermisosTab';
 
 const TABS = [
@@ -36,6 +37,9 @@ const TABS = [
   // EP-04: descuento por volumen — GERENTE_COMERCIAL/GERENTE_GENERAL/
   // ADMINISTRADOR (más amplio que "creditos", que es solo Comercial).
   { id: 'descuentos', label: 'Descuentos' },
+  // EP-21: validar cobros con comprobante — ADMINISTRADOR/GERENTE_COMERCIAL/
+  // FINANZAS (Finanzas es quien de verdad concilia depósitos).
+  { id: 'cobros', label: 'Cobros' },
   { id: 'configuracion', label: 'Configuración' },
   // EP-01: matriz de permisos por endpoint — solo ADMINISTRADOR, mismo
   // criterio que "administracion" (controla la seguridad del resto del
@@ -58,11 +62,13 @@ export default function GestionPage() {
   const esAdministrador = rol === 'ADMINISTRADOR';
   const puedeGestionarCreditos = rol === 'ADMINISTRADOR' || rol === 'GERENTE_COMERCIAL';
   const puedeGestionarDescuentos = rol === 'ADMINISTRADOR' || rol === 'GERENTE_COMERCIAL' || rol === 'GERENTE_GENERAL';
+  const puedeGestionarCobros = rol === 'ADMINISTRADOR' || rol === 'GERENTE_COMERCIAL' || rol === 'FINANZAS';
   const tabsVisibles = TABS.filter((t) => {
     if (t.id === 'administracion') return esAdministrador;
     if (t.id === 'permisos') return esAdministrador;
     if (t.id === 'creditos') return puedeGestionarCreditos;
     if (t.id === 'descuentos') return puedeGestionarDescuentos;
+    if (t.id === 'cobros') return puedeGestionarCobros;
     return true;
   });
   // Compartido entre Catálogo/Precios y Ofertas: antes cada pestaña tenía su
@@ -148,6 +154,7 @@ export default function GestionPage() {
       {tab === 'premios' && <PremiosTab />}
       {tab === 'creditos' && puedeGestionarCreditos && <CreditosTab />}
       {tab === 'descuentos' && puedeGestionarDescuentos && <DescuentosTab />}
+      {tab === 'cobros' && puedeGestionarCobros && <CobrosTab />}
       {tab === 'configuracion' && <ConfiguracionTab />}
       {tab === 'permisos' && esAdministrador && <PermisosTab />}
       {tab === 'administracion' && esAdministrador && <AdministracionTab />}

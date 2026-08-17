@@ -64,6 +64,9 @@ export const PERMISOS_CATALOGO: PermisoCatalogoItem[] = [
   { clave: 'ClientesController.aprobarSolicitudDescuento', modulo: 'Clientes, crédito y descuentos', etiqueta: 'Aprobar solicitud de descuento', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GERENTE_GENERAL'] },
   { clave: 'ClientesController.rechazarSolicitudDescuento', modulo: 'Clientes, crédito y descuentos', etiqueta: 'Rechazar solicitud de descuento', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GERENTE_GENERAL'] },
   { clave: 'ClientesController.registrarCobro', modulo: 'Clientes, crédito y descuentos', etiqueta: 'Registrar un cobro de cliente', rolesPorDefecto: ['ASESOR', 'GERENTE_COMERCIAL', 'ADMINISTRADOR', 'FINANZAS'] },
+  { clave: 'ClientesController.listarCobros', modulo: 'Clientes, crédito y descuentos', etiqueta: 'Ver bandeja de cobros a validar', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS'] },
+  { clave: 'ClientesController.validarCobro', modulo: 'Clientes, crédito y descuentos', etiqueta: 'Validar un cobro (aplica al saldo del cliente)', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS'] },
+  { clave: 'ClientesController.rechazarCobro', modulo: 'Clientes, crédito y descuentos', etiqueta: 'Rechazar un cobro', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS'] },
 
   // --- Catálogo de productos (CatalogController) ---
   { clave: 'CatalogController.listarLineas', modulo: 'Catálogo de productos', etiqueta: 'Listar productos (panel admin)', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO', 'ALMACEN'] },

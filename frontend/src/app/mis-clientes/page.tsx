@@ -23,6 +23,8 @@ type Cliente = {
   // EP-04 — solo aparecen acá las PENDIENTE o APROBADA-sin-usar (ver
   // ClientesService.listar) — una vez usada en un pedido, deja de listarse.
   solicitudesDescuento?: { id: string; estado: string; porcentaje: string }[];
+  // EP-21 — cobros PENDIENTE de validar (ver ClientesService.listar).
+  cobros?: { id: string; monto: string; metodo: string; createdAt: string }[];
 };
 
 const ESTADO_LABEL: Record<string, string> = { ACTIVO: 'Activo', MOROSO: 'Moroso — solo contado', BLOQUEADO: 'Bloqueado' };
@@ -44,6 +46,15 @@ export default function MisClientesPage() {
   // EP-04 — % y motivo del descuento por volumen a solicitar, por cliente.
   const [descuentoPct, setDescuentoPct] = useState<Record<string, string>>({});
   const [descuentoMotivo, setDescuentoMotivo] = useState<Record<string, string>>({});
+  // EP-21 — registrar un cobro contra la deuda del cliente, con comprobante
+  // adjunto opcional. Queda PENDIENTE hasta que Gerencia Comercial/Finanzas
+  // lo valide (ver Gestión → Cobros) — recién ahí se descuenta del saldo.
+  const [montoCobro, setMontoCobro] = useState<Record<string, string>>({});
+  const [metodoCobro, setMetodoCobro] = useState<Record<string, string>>({});
+  const [numeroOperacionCobro, setNumeroOperacionCobro] = useState<Record<string, string>>({});
+  const [bancoCobro, setBancoCobro] = useState<Record<string, string>>({});
+  const [comprobanteCobro, setComprobanteCobro] = useState<Record<string, File | null>>({});
+  const [registrandoCobro, setRegistrandoCobro] = useState<string | null>(null);
 
   const habilitado = canal === 'SALONES_BELLEZA' || canal === 'RETAIL';
 
@@ -113,6 +124,36 @@ export default function MisClientesPage() {
       await cargar();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo enviar la solicitud de descuento.');
+    }
+  }
+
+  async function registrarCobro(clienteId: string) {
+    setError(null);
+    const monto = Number(montoCobro[clienteId]);
+    if (!monto || monto <= 0) {
+      setError('Ingresá el monto del cobro.');
+      return;
+    }
+    const metodo = metodoCobro[clienteId] || 'deposito';
+    const fd = new FormData();
+    fd.append('monto', String(monto));
+    fd.append('metodo', metodo);
+    if (numeroOperacionCobro[clienteId]) fd.append('numeroOperacion', numeroOperacionCobro[clienteId]);
+    if (bancoCobro[clienteId]) fd.append('banco', bancoCobro[clienteId]);
+    if (comprobanteCobro[clienteId]) fd.append('comprobante', comprobanteCobro[clienteId] as File);
+
+    setRegistrandoCobro(clienteId);
+    try {
+      await apiFetch(`/clientes/${clienteId}/cobros`, { method: 'POST', body: fd, isFormData: true });
+      setMontoCobro((m) => ({ ...m, [clienteId]: '' }));
+      setNumeroOperacionCobro((m) => ({ ...m, [clienteId]: '' }));
+      setBancoCobro((m) => ({ ...m, [clienteId]: '' }));
+      setComprobanteCobro((m) => ({ ...m, [clienteId]: null }));
+      await cargar();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo registrar el cobro.');
+    } finally {
+      setRegistrandoCobro(null);
     }
   }
 
@@ -229,6 +270,63 @@ export default function MisClientesPage() {
                     );
                   })()}
                 </div>
+
+                {/* EP-21 — registrar un cobro contra la deuda del cliente. */}
+                {Number(c.saldoUtilizado) > 0 && (
+                  <div className="mt-2 border-t border-musgo/10 pt-2">
+                    {c.cobros && c.cobros.length > 0 && (
+                      <p className="mb-1 text-xs text-promo">
+                        {c.cobros.length === 1
+                          ? `Cobro de S/ ${Number(c.cobros[0].monto).toFixed(2)} enviado — esperando validación.`
+                          : `${c.cobros.length} cobros enviados — esperando validación.`}
+                      </p>
+                    )}
+                    <p className="text-xs text-bosque/60">Registrar cobro (deuda actual: S/ {Number(c.saldoUtilizado).toFixed(2)})</p>
+                    <div className="mt-1 grid grid-cols-2 gap-1">
+                      <input
+                        type="number" min="0" step="0.01"
+                        placeholder="Monto"
+                        value={montoCobro[c.id] ?? ''}
+                        onChange={(e) => setMontoCobro((m) => ({ ...m, [c.id]: e.target.value }))}
+                        className="rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                      />
+                      <select
+                        value={metodoCobro[c.id] ?? 'deposito'}
+                        onChange={(e) => setMetodoCobro((m) => ({ ...m, [c.id]: e.target.value }))}
+                        className="rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                      >
+                        <option value="deposito">Depósito</option>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="culqi">Culqi</option>
+                      </select>
+                      <input
+                        placeholder="N° operación"
+                        value={numeroOperacionCobro[c.id] ?? ''}
+                        onChange={(e) => setNumeroOperacionCobro((m) => ({ ...m, [c.id]: e.target.value }))}
+                        className="rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                      />
+                      <input
+                        placeholder="Banco"
+                        value={bancoCobro[c.id] ?? ''}
+                        onChange={(e) => setBancoCobro((m) => ({ ...m, [c.id]: e.target.value }))}
+                        className="rounded-pill border border-musgo/30 px-2 py-1 text-xs"
+                      />
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => setComprobanteCobro((m) => ({ ...m, [c.id]: e.target.files?.[0] ?? null }))}
+                      className="mt-1 w-full text-xs text-bosque/60"
+                    />
+                    <button
+                      onClick={() => registrarCobro(c.id)}
+                      disabled={registrandoCobro === c.id}
+                      className="mt-1 w-full rounded-pill bg-crema py-1.5 text-xs font-medium text-acento disabled:opacity-50"
+                    >
+                      {registrandoCobro === c.id ? 'Enviando…' : 'Registrar cobro'}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
