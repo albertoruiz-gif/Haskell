@@ -223,4 +223,45 @@ export class OperacionesService {
     await this.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizada;
   }
+
+  // EP-12: reprograma una entrega que falló — vuelve a ASIGNADO (mismo
+  // transportista, sin pasar por asignarTransportista otra vez) para que
+  // el flujo normal (aceptar -> en-ruta -> confirmar/fallida) se repita.
+  // registrarEntregaFallida ya había liberado el stock reservado, así que
+  // hay que volver a comprometerlo — si ya no queda disponible, esto
+  // rechaza acá mismo (no tiene sentido prometer una redelivery sin
+  // mercadería real).
+  async reprogramarEntrega(orderId: string, actorId: string, data: { fechaReprogramada: Date; motivo?: string }) {
+    const entrega = await this.prisma.entrega.findUniqueOrThrow({ where: { orderId } });
+    if (entrega.estado !== EstadoEntrega.FALLIDO) {
+      throw new BadRequestException('Solo se puede reprogramar una entrega que falló.');
+    }
+
+    await this.inventario.reservarParaOrder(orderId);
+    await this.inventario.comprometerParaOrder(orderId);
+
+    await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PACKING } });
+    const actualizada = await this.prisma.entrega.update({
+      where: { orderId },
+      data: {
+        estado: EstadoEntrega.ASIGNADO,
+        aceptadoEn: null,
+        fechaReprogramada: data.fechaReprogramada,
+        motivoReprogramacion: data.motivo,
+        vecesReprogramada: { increment: 1 },
+      },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        accion: 'REPROGRAMAR_ENTREGA',
+        entidad: 'Entrega',
+        entidadId: actualizada.id,
+        motivo: data.motivo,
+        valoresDespues: { fechaReprogramada: data.fechaReprogramada.toISOString() },
+      },
+    });
+    await this.sincronizarEstadoPedidoAOdoo(orderId);
+    return actualizada;
+  }
 }

@@ -158,6 +158,7 @@ export class PremiosService {
       grupo.totalVenta += monto;
       grupo.comisionMes += comision;
       grupo.pedidos.push({
+        id: p.id, // EP-12: para pedir el seguimiento (GET /orders/:id/seguimiento)
         numero: p.numero,
         canal: p.canal,
         fecha: p.pagadoEn,

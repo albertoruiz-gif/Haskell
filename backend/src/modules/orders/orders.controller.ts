@@ -48,6 +48,15 @@ export class OrdersController {
     return this.orders.listarPedidos(estado);
   }
 
+  // EP-12 — el Asesor ve el seguimiento de su propio pedido (número,
+  // estado, transportista/entrega si ya hay). Roles administrativos
+  // también pueden, para dar soporte sin tener que buscar en /orders.
+  @Get(':id/seguimiento')
+  @Roles('ASESOR', 'ADMINISTRADOR', 'GERENTE_COMERCIAL', 'ALMACEN')
+  seguimiento(@Param('id') id: string, @Req() req: any) {
+    return this.orders.obtenerSeguimiento(id, req.user.asesorId ?? null, req.user.rol);
+  }
+
   @Patch(':id/validar-pago')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL')
   validarPago(@Param('id') id: string, @Req() req: any) {

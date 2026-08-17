@@ -911,6 +911,16 @@ model Entrega {
   pagado               Boolean     @default(false)
   pagadoEn             DateTime?
 
+  // EP-12 (2026-08-17): reprogramar una entrega FALLIDO vuelve a ASIGNADO
+  // (mismo transportista, re-comprometiendo stock — ver
+  // OperacionesService.reprogramarEntrega) en vez de crear una fila nueva
+  // (Entrega.orderId es único). fechaReprogramada es la nueva fecha
+  // prometida para el reintento; motivoReprogramacion es aparte de
+  // motivoFallo (por qué falló vs. qué se acordó para el reintento).
+  fechaReprogramada    DateTime?
+  motivoReprogramacion String?
+  vecesReprogramada    Int         @default(0)
+
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 

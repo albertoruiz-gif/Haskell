@@ -116,6 +116,7 @@ export const PERMISOS_CATALOGO: PermisoCatalogoItem[] = [
 
   // --- Pedidos (OrdersController) ---
   { clave: 'OrdersController.listar', modulo: 'Pedidos', etiqueta: 'Listar pedidos (panel admin)', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'ALMACEN'] },
+  { clave: 'OrdersController.seguimiento', modulo: 'Pedidos', etiqueta: 'Ver seguimiento de un pedido', rolesPorDefecto: ['ASESOR', 'ADMINISTRADOR', 'GERENTE_COMERCIAL', 'ALMACEN'] },
   { clave: 'OrdersController.validarPago', modulo: 'Pedidos', etiqueta: 'Validar el pago de un pedido', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL'] },
   { clave: 'OrdersController.registrarDeposito', modulo: 'Pedidos', etiqueta: 'Registrar depósito de un pedido al crédito', rolesPorDefecto: ['ASESOR'] },
   { clave: 'OrdersController.validarDeposito', modulo: 'Pedidos', etiqueta: 'Validar depósito de un pedido al crédito', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'FINANZAS'] },
@@ -130,6 +131,7 @@ export const PERMISOS_CATALOGO: PermisoCatalogoItem[] = [
   { clave: 'OperacionesController.marcarEnRuta', modulo: 'Picking, packing y despacho', etiqueta: 'Marcar pedido en ruta', rolesPorDefecto: ['TRANSPORTISTA', 'ADMINISTRADOR'] },
   { clave: 'OperacionesController.confirmarEntrega', modulo: 'Picking, packing y despacho', etiqueta: 'Confirmar entrega de un pedido', rolesPorDefecto: ['TRANSPORTISTA', 'ADMINISTRADOR'] },
   { clave: 'OperacionesController.entregaFallida', modulo: 'Picking, packing y despacho', etiqueta: 'Registrar entrega fallida', rolesPorDefecto: ['TRANSPORTISTA', 'ADMINISTRADOR'] },
+  { clave: 'OperacionesController.reprogramarEntrega', modulo: 'Picking, packing y despacho', etiqueta: 'Reprogramar una entrega fallida', rolesPorDefecto: ['ALMACEN', 'ADMINISTRADOR'] },
   { clave: 'OperacionesController.listarPagos', modulo: 'Picking, packing y despacho', etiqueta: 'Ver pagos a transportistas', rolesPorDefecto: ['ADMINISTRADOR', 'ALMACEN'] },
   { clave: 'OperacionesController.marcarPagado', modulo: 'Picking, packing y despacho', etiqueta: 'Marcar pago a transportista como pagado', rolesPorDefecto: ['ADMINISTRADOR'] },
 

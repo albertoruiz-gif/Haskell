@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { EstadoPedido } from '@prisma/client';
 import { OrdersService } from './orders.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -279,5 +279,64 @@ describe('OrdersService — crearPedidoDesdeItems (EP-04 descuento + IGV)', () =
     await expect(
       service.crearPedidoDesdeItems('a1', [{ catalogLineId: 'cl1', cantidad: 1 }], { clienteId: 'c1', solicitudDescuentoId: 'sd1' }),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('OrdersService — obtenerSeguimiento (EP-12)', () => {
+  function crearService(order: any) {
+    const prisma = { order: { findUniqueOrThrow: jest.fn().mockResolvedValue(order) } };
+    const service = new OrdersService(prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    return { service, prisma };
+  }
+
+  const ORDER_BASE = {
+    id: 'o1',
+    asesorId: 'a1',
+    canal: 'RETAIL',
+    numero: 42,
+    referenciaWeb: 'ref-abc',
+    estado: 'EN_RUTA',
+    pagadoEn: new Date('2026-08-01T10:00:00Z'),
+    entrega: null,
+  };
+
+  it('rechaza a un Asesor que pide el seguimiento de un pedido que no es suyo', async () => {
+    const { service } = crearService({ ...ORDER_BASE, asesorId: 'otro-asesor' });
+    await expect(service.obtenerSeguimiento('o1', 'a1', 'ASESOR')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('deja pasar al dueño del pedido', async () => {
+    const { service } = crearService(ORDER_BASE);
+    const resultado = await service.obtenerSeguimiento('o1', 'a1', 'ASESOR');
+    expect(resultado.referenciaWeb).toBe('ref-abc');
+    expect(resultado.estado).toBe('EN_RUTA');
+  });
+
+  it('deja pasar a un rol administrativo aunque el pedido sea de otro asesor', async () => {
+    const { service } = crearService({ ...ORDER_BASE, asesorId: 'otro-asesor' });
+    await expect(service.obtenerSeguimiento('o1', 'admin-1', 'ADMINISTRADOR')).resolves.toBeDefined();
+  });
+
+  it('devuelve entrega: null cuando todavía no hay transportista asignado', async () => {
+    const { service } = crearService(ORDER_BASE);
+    const resultado = await service.obtenerSeguimiento('o1', 'a1', 'ASESOR');
+    expect(resultado.entrega).toBeNull();
+  });
+
+  it('incluye el detalle de la entrega (con etiqueta en español) cuando ya hay transportista', async () => {
+    const { service } = crearService({
+      ...ORDER_BASE,
+      entrega: {
+        estado: 'EN_RUTA',
+        transportista: { user: { nombre: 'Juan Pérez' } },
+        fechaReprogramada: null,
+        motivoFallo: null,
+        receptor: null,
+      },
+    });
+    const resultado = await service.obtenerSeguimiento('o1', 'a1', 'ASESOR');
+    expect(resultado.entrega).toEqual(
+      expect.objectContaining({ estado: 'EN_RUTA', estadoLabel: 'En camino', transportistaNombre: 'Juan Pérez' }),
+    );
   });
 });

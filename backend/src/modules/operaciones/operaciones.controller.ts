@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OperacionesService } from './operaciones.service';
+import { ReprogramarEntregaDto } from './dto/reprogramar-entrega.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { multerEntregaConfig } from '../../common/upload/multer-entrega.config';
@@ -67,6 +68,17 @@ export class OperacionesController {
   @Roles('TRANSPORTISTA', 'ADMINISTRADOR')
   entregaFallida(@Param('id') id: string, @Body() dto: { motivo: string; observaciones?: string }) {
     return this.operacionesService.registrarEntregaFallida(id, dto.motivo, dto.observaciones);
+  }
+
+  // EP-12 — reprogramar una entrega fallida. Roles de Almacén/Administrador
+  // (quien despacha decide cuándo reintentar), no del transportista.
+  @Post('pedidos/:id/entrega/reprogramar')
+  @Roles('ALMACEN', 'ADMINISTRADOR')
+  reprogramarEntrega(@Param('id') id: string, @Body() dto: ReprogramarEntregaDto, @Req() req: any) {
+    return this.operacionesService.reprogramarEntrega(id, req.user.id, {
+      fechaReprogramada: new Date(dto.fechaReprogramada),
+      motivo: dto.motivo,
+    });
   }
 
   // --- Módulo Transporte: pagos a transportistas (tarifa fija por entrega) ---

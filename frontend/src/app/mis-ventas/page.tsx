@@ -5,7 +5,7 @@
 // semana/mes/total, historial de pedidos mes a mes, y productos más
 // vendidos propios.
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../lib/api';
 import { formatoSoles } from '../../lib/premios';
 import { formatearNumeroPedido } from '../../lib/numeroPedido';
@@ -15,15 +15,54 @@ import { SerieHistoricaChart } from '../../components/indicadores/SerieHistorica
 import { PERIODOS } from '../../lib/indicadores';
 import type { Periodo } from '../../lib/indicadores';
 
-type Pedido = { numero: number; canal: string; fecha: string; monto: number; comision: number; cantidadItems: number };
+type Pedido = { id: string; numero: number; canal: string; fecha: string; monto: number; comision: number; cantidadItems: number };
 type Mes = { etiqueta: string; totalVenta: number; comisionMes: number; pedidos: Pedido[] };
 type HistorialVentas = { comisionSemana: number; comisionMes: number; comisionTotal: number; canal: string; meses: Mes[] };
+
+// EP-12 — seguimiento de un pedido (GET /orders/:id/seguimiento).
+type Seguimiento = {
+  referenciaWeb: string;
+  numero: string;
+  estado: string;
+  estadoLabel: string;
+  fechaEntregaPrometida: string | null;
+  entrega: {
+    estado: string;
+    estadoLabel: string;
+    transportistaNombre: string;
+    fechaReprogramada: string | null;
+    motivoFallo: string | null;
+    receptor: string | null;
+  } | null;
+};
 
 export default function MisVentasPage() {
   const [data, setData] = useState<HistorialVentas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mesAbierto, setMesAbierto] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<Periodo>('Mes');
+  // EP-12 — seguimiento del pedido, cargado bajo demanda al abrir la fila.
+  const [pedidoAbierto, setPedidoAbierto] = useState<string | null>(null);
+  const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({});
+  const [cargandoSeguimiento, setCargandoSeguimiento] = useState<string | null>(null);
+
+  async function verSeguimiento(pedidoId: string) {
+    if (pedidoAbierto === pedidoId) {
+      setPedidoAbierto(null);
+      return;
+    }
+    setPedidoAbierto(pedidoId);
+    if (seguimientos[pedidoId]) return;
+    setCargandoSeguimiento(pedidoId);
+    try {
+      const data = await apiFetch<Seguimiento>(`/orders/${pedidoId}/seguimiento`);
+      setSeguimientos((s) => ({ ...s, [pedidoId]: data }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo cargar el seguimiento del pedido.');
+    } finally {
+      setCargandoSeguimiento(null);
+    }
+  }
 
   useEffect(() => {
     apiFetch<HistorialVentas>('/premios/mi-historial-ventas')
@@ -108,15 +147,57 @@ export default function MisVentasPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {m.pedidos.map((p) => (
-                            <tr key={p.numero} className="border-t border-musgo/10">
-                              <td className="py-1 pr-2 font-medium text-bosque">{formatearNumeroPedido(p.canal, p.numero)}</td>
-                              <td className="py-1 pr-2 text-bosque/60">{new Date(p.fecha).toLocaleDateString('es-PE')}</td>
-                              <td className="py-1 pr-2 text-right">{p.cantidadItems}</td>
-                              <td className="py-1 pr-2 text-right">{formatoSoles(p.monto)}</td>
-                              <td className="py-1 text-right text-acento">{formatoSoles(p.comision)}</td>
-                            </tr>
-                          ))}
+                          {m.pedidos.map((p) => {
+                            const seguimiento = seguimientos[p.id];
+                            const abierto = pedidoAbierto === p.id;
+                            return (
+                              <Fragment key={p.id}>
+                                <tr
+                                  onClick={() => verSeguimiento(p.id)}
+                                  className="cursor-pointer border-t border-musgo/10 hover:bg-crema/40"
+                                >
+                                  <td className="py-1 pr-2 font-medium text-bosque underline decoration-dotted">
+                                    {formatearNumeroPedido(p.canal, p.numero)}
+                                  </td>
+                                  <td className="py-1 pr-2 text-bosque/60">{new Date(p.fecha).toLocaleDateString('es-PE')}</td>
+                                  <td className="py-1 pr-2 text-right">{p.cantidadItems}</td>
+                                  <td className="py-1 pr-2 text-right">{formatoSoles(p.monto)}</td>
+                                  <td className="py-1 text-right text-acento">{formatoSoles(p.comision)}</td>
+                                </tr>
+                                {abierto && (
+                                  <tr className="border-t border-musgo/10 bg-crema/30">
+                                    <td colSpan={5} className="px-2 py-2 text-xs text-bosque/70">
+                                      {cargandoSeguimiento === p.id && <p>Cargando seguimiento…</p>}
+                                      {seguimiento && (
+                                        <div className="space-y-0.5">
+                                          <p><span className="font-medium">Estado del pedido:</span> {seguimiento.estadoLabel}</p>
+                                          {seguimiento.fechaEntregaPrometida && (
+                                            <p><span className="font-medium">Entrega prometida:</span> {new Date(seguimiento.fechaEntregaPrometida).toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
+                                          )}
+                                          {seguimiento.entrega ? (
+                                            <>
+                                              <p><span className="font-medium">Transportista:</span> {seguimiento.entrega.transportistaNombre} — {seguimiento.entrega.estadoLabel}</p>
+                                              {seguimiento.entrega.fechaReprogramada && (
+                                                <p><span className="font-medium">Nueva fecha (reprogramada):</span> {new Date(seguimiento.entrega.fechaReprogramada).toLocaleDateString('es-PE')}</p>
+                                              )}
+                                              {seguimiento.entrega.motivoFallo && (
+                                                <p><span className="font-medium">Motivo del último intento fallido:</span> {seguimiento.entrega.motivoFallo}</p>
+                                              )}
+                                              {seguimiento.entrega.receptor && (
+                                                <p><span className="font-medium">Recibió:</span> {seguimiento.entrega.receptor}</p>
+                                              )}
+                                            </>
+                                          ) : (
+                                            <p>Todavía no se asignó transportista.</p>
+                                          )}
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

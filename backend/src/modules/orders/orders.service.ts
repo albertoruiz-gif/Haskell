@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Canal, EstadoPedido, FormaPago } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -8,6 +8,9 @@ import { InventarioService } from '../inventario/inventario.service';
 import { OperacionesService } from '../operaciones/operaciones.service';
 import { ClientesService } from '../clientes/clientes.service';
 import { calcularFechaEntregaPrometida } from '../../common/sla.util';
+import { formatearNumeroPedido } from '../../common/numero-pedido.util';
+import { ESTADO_PEDIDO_LABEL } from '../../common/estados-pedido.util';
+import { ESTADO_ENTREGA_LABEL } from '../../common/estados-entrega.util';
 
 // EP-21 — solo estos canales admiten Cliente/formaPago distinta de
 // CONTADO_CULQI. En COMERCIO_MINORISTA el Asesor compra para sí mismo.
@@ -332,6 +335,39 @@ export class OrdersService {
       ...p,
       fechaEntregaPrometida: p.pagadoEn ? calcularFechaEntregaPrometida(p.pagadoEn) : null,
     }));
+  }
+
+  /**
+   * EP-12 — seguimiento del pedido para el Asesor que lo hizo (número,
+   * estado, y el detalle de la entrega si ya hay transportista asignado).
+   * Antes no existía ninguna vía de lectura para el Asesor: GET /orders
+   * está restringido a roles administrativos.
+   */
+  async obtenerSeguimiento(orderId: string, asesorId: string | null, rol: string) {
+    const order = await this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { entrega: { include: { transportista: { include: { user: true } } } } },
+    });
+    if (rol === 'ASESOR' && order.asesorId !== asesorId) {
+      throw new ForbiddenException('Este pedido no te pertenece.');
+    }
+    return {
+      referenciaWeb: order.referenciaWeb,
+      numero: formatearNumeroPedido(order.canal, order.numero),
+      estado: order.estado,
+      estadoLabel: ESTADO_PEDIDO_LABEL[order.estado],
+      fechaEntregaPrometida: order.pagadoEn ? calcularFechaEntregaPrometida(order.pagadoEn) : null,
+      entrega: order.entrega
+        ? {
+            estado: order.entrega.estado,
+            estadoLabel: ESTADO_ENTREGA_LABEL[order.entrega.estado],
+            transportistaNombre: order.entrega.transportista.user.nombre,
+            fechaReprogramada: order.entrega.fechaReprogramada,
+            motivoFallo: order.entrega.motivoFallo,
+            receptor: order.entrega.receptor,
+          }
+        : null,
+    };
   }
 
   /**

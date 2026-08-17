@@ -19,6 +19,8 @@ type Entrega = {
   receptor: string | null;
   documentoReceptor: string | null;
   evidenciaUrl: string | null;
+  fechaReprogramada: string | null;
+  vecesReprogramada: number;
   updatedAt: string;
 };
 
@@ -85,7 +87,10 @@ export function DespachoSection() {
   const [fotoEvidencia, setFotoEvidencia] = useState<File | null>(null);
   const [motivoDevolucion, setMotivoDevolucion] = useState(MOTIVOS_DEVOLUCION[0]);
   const [observaciones, setObservaciones] = useState('');
-  const [accionEntrega, setAccionEntrega] = useState<{ id: string; tipo: 'entregar' | 'devolver' } | null>(null);
+  const [accionEntrega, setAccionEntrega] = useState<{ id: string; tipo: 'entregar' | 'devolver' | 'reprogramar' } | null>(null);
+  // EP-12 — reprogramar una entrega FALLIDO.
+  const [fechaReprogramada, setFechaReprogramada] = useState('');
+  const [motivoReprogramacion, setMotivoReprogramacion] = useState('');
   const [, forceTick] = useState(0); // refresca "tiempo transcurrido" cada minuto sin recargar del servidor
 
   async function cargar() {
@@ -176,6 +181,29 @@ export function DespachoSection() {
       setFotoEvidencia(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo confirmar la entrega.');
+    } finally {
+      setProcesando(false);
+    }
+  }
+
+  async function reprogramar(p: Pedido) {
+    if (!fechaReprogramada) {
+      setError('Elegí la nueva fecha de entrega.');
+      return;
+    }
+    setError(null);
+    setProcesando(true);
+    try {
+      await apiFetch(`/operaciones/pedidos/${p.id}/entrega/reprogramar`, {
+        method: 'POST',
+        body: { fechaReprogramada, motivo: motivoReprogramacion || undefined },
+      });
+      await cargar();
+      setAccionEntrega(null);
+      setFechaReprogramada('');
+      setMotivoReprogramacion('');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo reprogramar la entrega.');
     } finally {
       setProcesando(false);
     }
@@ -330,15 +358,49 @@ export function DespachoSection() {
                             </button>
                           </div>
                         )}
-                        {(p.entrega?.estado === 'ENTREGADO' || p.entrega?.estado === 'FALLIDO') && (
-                          <span className="text-xs text-bosque/40">Cerrado</span>
+                        {p.entrega?.estado === 'ENTREGADO' && <span className="text-xs text-bosque/40">Cerrado</span>}
+                        {p.entrega?.estado === 'FALLIDO' && !mostrandoAccion && (
+                          <button
+                            onClick={() => setAccionEntrega({ id: p.id, tipo: 'reprogramar' })}
+                            className="rounded-pill bg-bosque px-3 py-1 text-xs font-medium text-white"
+                          >
+                            Reprogramar
+                          </button>
                         )}
                       </td>
                     </tr>
                     {mostrandoAccion && (
                       <tr className="border-b border-musgo/10 bg-crema/50">
                         <td colSpan={8} className="px-3 py-2">
-                          {accionEntrega.tipo === 'entregar' ? (
+                          {accionEntrega.tipo === 'reprogramar' ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="date"
+                                value={fechaReprogramada}
+                                onChange={(e) => setFechaReprogramada(e.target.value)}
+                                className="rounded-pill border border-musgo/30 px-3 py-1.5 text-xs"
+                              />
+                              <input
+                                placeholder="Motivo / acuerdo con el cliente (opcional)"
+                                value={motivoReprogramacion}
+                                onChange={(e) => setMotivoReprogramacion(e.target.value)}
+                                className="flex-1 rounded-pill border border-musgo/30 px-3 py-1.5 text-xs"
+                              />
+                              <button onClick={() => reprogramar(p)} disabled={procesando} className="rounded-pill bg-bosque px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60">
+                                {procesando ? 'Guardando…' : 'Confirmar reprogramación'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setAccionEntrega(null);
+                                  setFechaReprogramada('');
+                                  setMotivoReprogramacion('');
+                                }}
+                                className="rounded-pill bg-white px-3 py-1.5 text-xs text-bosque shadow-sm"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : accionEntrega.tipo === 'entregar' ? (
                             <div className="flex flex-wrap items-center gap-2">
                               <input
                                 placeholder="Nombre de quién recibió"
