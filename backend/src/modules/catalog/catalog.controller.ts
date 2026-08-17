@@ -338,6 +338,62 @@ export class CatalogController {
     return { productosEnOdoo: productosOdoo.length, actualizados, sinCambios, sinCoincidencia, omitidosPorCanal };
   }
 
+  // EP-14: comparación de stock contra Odoo (docs/ARQUITECTURA.md la define
+  // como "Odoo -> Web, consulta en caliente antes de pagar" — pero acá se
+  // implementa como reporte manual, NO como gate del checkout: el stock
+  // real de venta sigue siendo 100% CatalogLine.stockDisponible (lotes,
+  // FEFO, EP-09/EP-10 ya completas). Agregar una consulta a Odoo en el
+  // camino crítico de pago rompería el criterio ya establecido en todo el
+  // resto de la integración (Odoo nunca bloquea una operación real — ver
+  // OrdersService.confirmarPagoYEnviarAOdoo/ClientesService.sincronizarConOdoo)
+  // y sumaría una dependencia en vivo justo donde menos conviene. Esto es
+  // solo para que Gestión detecte diferencias entre lo que dice Haskell y
+  // lo que dice Odoo, y las investigue a mano.
+  @Post('admin/comparar-stock-odoo')
+  @Roles('ADMINISTRADOR', 'GESTOR_CATALOGO', 'ALMACEN')
+  async compararStockOdoo() {
+    const productosOdoo = await this.odoo.obtenerProductos();
+    const odooIdPorSku = new Map(productosOdoo.filter((p) => p.default_code).map((p) => [p.default_code, p.id]));
+
+    const stockOdoo = await this.odoo.obtenerStock(Array.from(odooIdPorSku.values()));
+    const disponiblePorOdooId = new Map<number, number>();
+    for (const s of stockOdoo) {
+      const [odooId] = s.product_id;
+      const disponible = s.quantity - s.reserved_quantity;
+      disponiblePorOdooId.set(odooId, (disponiblePorOdooId.get(odooId) ?? 0) + disponible);
+    }
+
+    const lineas = await this.prisma.catalogLine.findMany({
+      select: { sku: true, nombre: true, stockDisponible: true },
+    });
+
+    let sinCoincidencia = 0;
+    const comparacion: { sku: string; nombre: string | null; stockInterno: number; stockOdoo: number; diferencia: number }[] = [];
+    for (const linea of lineas) {
+      const odooId = odooIdPorSku.get(linea.sku);
+      if (odooId === undefined) {
+        sinCoincidencia++;
+        continue;
+      }
+      const stockOdooDisponible = disponiblePorOdooId.get(odooId) ?? 0;
+      comparacion.push({
+        sku: linea.sku,
+        nombre: linea.nombre,
+        stockInterno: linea.stockDisponible,
+        stockOdoo: stockOdooDisponible,
+        diferencia: linea.stockDisponible - stockOdooDisponible,
+      });
+    }
+
+    const conDiferencia = comparacion.filter((c) => c.diferencia !== 0);
+    return {
+      comparados: comparacion.length,
+      sinCoincidencia,
+      conDiferencia: conDiferencia.length,
+      detalle: conDiferencia,
+    };
+  }
+
   @Patch('admin/lineas/:id/precio')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
   async actualizarPrecio(@Param('id') id: string, @Body() dto: ActualizarPrecioDto) {

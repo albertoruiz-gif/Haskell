@@ -1,10 +1,29 @@
 # Backups y restauración de Postgres (EP-20)
 
-**Estado al 2026-08-17:** backup local automático funcionando en Testeo y
-Producción. Backup a S3 (para sobrevivir la pérdida total de una instancia,
-no solo un dato mal escrito) queda con el bucket ya creado, pero **falta un
-paso manual de Alberto** para que el rol de las EC2 tenga permiso de subir —
-ver sección "Pendiente" abajo.
+**Estado al 2026-08-17:** script de backup probado y funcionando a mano en
+Testeo y Producción (dump local + intento de subida a S3). **Faltan dos
+pasos manuales de Alberto** — Claude Code no pudo aplicarlos (bloqueados
+por el clasificador de permisos: cambios de IAM y escritura en `/etc/cron.d`
+vía sudo, ambos considerados sensibles). Los dos quedan abajo con el
+comando exacto a copiar/pegar.
+
+## Pendiente 1 — activar el cron (sin esto, el backup no corre solo)
+
+Por SSM Session Manager (consola AWS → EC2 → Connect → Session Manager) o
+por SSH si lo tenés, en **cada** servidor:
+
+```bash
+# Testeo:
+printf '10 4 * * * ubuntu BACKUP_AMBIENTE=testeo /home/ubuntu/Haskell/infra/scripts/backup-postgres.sh >> /var/log/postgres-backup.log 2>&1\n' | sudo tee /etc/cron.d/postgres-backup
+sudo chmod 644 /etc/cron.d/postgres-backup
+
+# Producción (mismo archivo, solo cambia BACKUP_AMBIENTE):
+printf '10 4 * * * ubuntu BACKUP_AMBIENTE=produccion /home/ubuntu/Haskell/infra/scripts/backup-postgres.sh >> /var/log/postgres-backup.log 2>&1\n' | sudo tee /etc/cron.d/postgres-backup
+sudo chmod 644 /etc/cron.d/postgres-backup
+```
+
+Corre todos los días a las 4:10am. Mientras tanto, se puede correr a mano
+cuando haga falta (ver sección "Probar a mano" más abajo).
 
 ## Qué hace `infra/scripts/backup-postgres.sh`
 
@@ -23,16 +42,7 @@ disco, ver `docs/CI_MEJORAS_FUTURAS.md`):
    chico — ya se quedó sin espacio una vez, no conviene acumular ahí). En
    S3 la regla de expiración es de 60 días (configurada en el bucket).
 
-## Cron instalado (por SSM, una vez por servidor)
-
-Testeo (`/etc/cron.d/postgres-backup`):
-```
-10 4 * * * ubuntu BACKUP_AMBIENTE=testeo /home/ubuntu/Haskell/infra/scripts/backup-postgres.sh >> /var/log/postgres-backup.log 2>&1
-```
-
-Producción — mismo archivo, `BACKUP_AMBIENTE=produccion`.
-
-## Pendiente — permiso IAM para subir a S3
+## Pendiente 2 — permiso IAM para subir a S3
 
 El bucket `haskell-postgres-backups-efficax` ya existe (privado, cifrado
 por defecto, expiración a 60 días). Falta darle al rol `haskell-ec2-role`
@@ -60,6 +70,14 @@ aws iam put-role-policy \
 
 No hace falta reiniciar nada después — el próximo backup (o uno corrido a
 mano) ya sube solo a S3 en cuanto el permiso esté puesto.
+
+## Probar a mano (mientras no está el cron activado)
+
+```bash
+cd /home/ubuntu/Haskell/infra
+BACKUP_AMBIENTE=testeo ./scripts/backup-postgres.sh   # o produccion, según el servidor
+ls -la /home/ubuntu/backups/
+```
 
 ## Cómo restaurar
 

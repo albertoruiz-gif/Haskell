@@ -22,6 +22,15 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
   const [creando, setCreando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [resultadoSync, setResultadoSync] = useState<string | null>(null);
+  // EP-14: comparación de stock (reporte, no toca nada — el stock real que
+  // se vende sigue siendo 100% el interno, ver nota en CatalogController).
+  const [comparandoStock, setComparandoStock] = useState(false);
+  const [resultadoStock, setResultadoStock] = useState<{
+    comparados: number;
+    sinCoincidencia: number;
+    conDiferencia: number;
+    detalle: { sku: string; nombre: string | null; stockInterno: number; stockOdoo: number; diferencia: number }[];
+  } | null>(null);
 
   const {
     busqueda,
@@ -109,6 +118,25 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
     }
   }
 
+  async function compararStockOdoo() {
+    setError(null);
+    setResultadoStock(null);
+    setComparandoStock(true);
+    try {
+      const r = await apiFetch<{
+        comparados: number;
+        sinCoincidencia: number;
+        conDiferencia: number;
+        detalle: { sku: string; nombre: string | null; stockInterno: number; stockOdoo: number; diferencia: number }[];
+      }>('/catalogo/admin/comparar-stock-odoo', { method: 'POST' });
+      setResultadoStock(r);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo comparar el stock con Odoo.');
+    } finally {
+      setComparandoStock(false);
+    }
+  }
+
   async function subirFoto(id: string, archivo: File) {
     setError(null);
     try {
@@ -166,6 +194,37 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
             {sincronizando ? 'Sincronizando…' : 'Sincronizar ahora'}
           </button>
           {resultadoSync && <p className="mt-2 text-xs text-bosque/60">{resultadoSync}</p>}
+        </div>
+
+        <div className="rounded-card bg-white p-3 shadow-sm">
+          <p className="text-sm font-medium text-bosque">Comparar stock con Odoo</p>
+          <p className="mt-1 text-xs text-bosque/50">
+            Solo compara — no cambia nada acá. El stock real que se vende sigue siendo el interno (lotes).
+          </p>
+          <button
+            onClick={compararStockOdoo}
+            disabled={comparandoStock}
+            className="mt-2 w-full rounded-pill bg-acento py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {comparandoStock ? 'Comparando…' : 'Comparar ahora'}
+          </button>
+          {resultadoStock && (
+            <div className="mt-2 text-xs text-bosque/60">
+              <p>
+                {resultadoStock.comparados} comparados, {resultadoStock.conDiferencia} con diferencia, {resultadoStock.sinCoincidencia} sin coincidencia por SKU.
+              </p>
+              {resultadoStock.detalle.length > 0 && (
+                <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto">
+                  {resultadoStock.detalle.map((d) => (
+                    <li key={d.sku}>
+                      <span className="font-medium">{d.sku}</span> {d.nombre ?? ''} — interno {d.stockInterno}, Odoo {d.stockOdoo}
+                      {' '}({d.diferencia > 0 ? '+' : ''}{d.diferencia})
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -72,6 +72,7 @@ export const PERMISOS_CATALOGO: PermisoCatalogoItem[] = [
   { clave: 'CatalogController.listarLineas', modulo: 'Catálogo de productos', etiqueta: 'Listar productos (panel admin)', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO', 'ALMACEN'] },
   { clave: 'CatalogController.crearLinea', modulo: 'Catálogo de productos', etiqueta: 'Crear un producto', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'] },
   { clave: 'CatalogController.sincronizarDesdeOdoo', modulo: 'Catálogo de productos', etiqueta: 'Sincronizar catálogo desde Odoo', rolesPorDefecto: ['ADMINISTRADOR', 'GESTOR_CATALOGO'] },
+  { clave: 'CatalogController.compararStockOdoo', modulo: 'Catálogo de productos', etiqueta: 'Comparar stock contra Odoo', rolesPorDefecto: ['ADMINISTRADOR', 'GESTOR_CATALOGO', 'ALMACEN'] },
   { clave: 'CatalogController.actualizarPrecio', modulo: 'Catálogo de productos', etiqueta: 'Editar precio de un producto', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'] },
   { clave: 'CatalogController.definirPack', modulo: 'Catálogo de productos', etiqueta: 'Armar un pack de productos', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'] },
   { clave: 'CatalogController.actualizarLinea', modulo: 'Catálogo de productos', etiqueta: 'Editar datos de un producto', rolesPorDefecto: ['ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO'] },
