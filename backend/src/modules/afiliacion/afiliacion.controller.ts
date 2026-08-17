@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Canal } from '@prisma/client';
 import { AfiliacionService } from './afiliacion.service';
@@ -6,6 +6,7 @@ import { CrearAsesorDto } from './dto/crear-asesor.dto';
 import { ReasignarLiderDto } from './dto/reasignar-lider.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { multerExcelConfig } from '../../common/upload/multer-excel.config';
 
 @Controller('afiliacion')
 @UseGuards(RolesGuard)
@@ -38,8 +39,9 @@ export class AfiliacionController {
   // RF-008: sube el Excel, devuelve preview de validos/errores SIN persistir
   @Post('masiva/previsualizar')
   @Roles('ADMINISTRADOR')
-  @UseInterceptors(FileInterceptor('archivo'))
+  @UseInterceptors(FileInterceptor('archivo', multerExcelConfig))
   previsualizar(@UploadedFile() archivo: Express.Multer.File) {
+    if (!archivo) throw new BadRequestException('Subí un archivo Excel (.xlsx).');
     return this.afiliacionService.previsualizarCargaMasiva(archivo.buffer);
   }
 

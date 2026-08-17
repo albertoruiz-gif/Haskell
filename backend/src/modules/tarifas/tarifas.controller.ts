@@ -6,6 +6,7 @@ import { CrearTarifaDto } from './dto/crear-tarifa.dto';
 import { ActualizarTarifaDto } from './dto/actualizar-tarifa.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { multerTarifasConfig } from '../../common/upload/multer-tarifas.config';
 
 // Tarifario de envío por distrito (RF-016): precio al asesor y plazo de
 // entrega (RF-030) que se congela en cada pedido al pagar.
@@ -34,7 +35,7 @@ export class TarifasController {
   }
 
   @Post('importar')
-  @UseInterceptors(FileInterceptor('archivo'))
+  @UseInterceptors(FileInterceptor('archivo', multerTarifasConfig))
   async importar(@UploadedFile() archivo: Express.Multer.File) {
     if (!archivo) throw new BadRequestException('Subí un archivo Excel (.xlsx) o CSV.');
     const esCSV = archivo.originalname.toLowerCase().endsWith('.csv') || archivo.mimetype === 'text/csv';
