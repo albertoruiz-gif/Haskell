@@ -63,11 +63,37 @@ export class CampaignsService {
     });
   }
 
-  // RF-047: publicar segun vigencia — el vencimiento lo procesa un job programado (pendiente de implementar cron)
+  // RF-047: publicar según vigencia — si vigenciaDesde es futura, el
+  // catálogo queda PROGRAMADO en vez de PUBLICADO de una (EP-03,
+  // 2026-08-18); verificarTransicionesCatalogo() lo pasa a PUBLICADO solo
+  // cuando llega la fecha.
   async publicarCatalogo(catalogId: string, vigenciaDesde: Date, vigenciaHasta: Date) {
+    const estado = vigenciaDesde > new Date() ? EstadoCatalogo.PROGRAMADO : EstadoCatalogo.PUBLICADO;
     return this.prisma.catalog.update({
       where: { id: catalogId },
-      data: { estado: EstadoCatalogo.PUBLICADO, vigenciaDesde, vigenciaHasta },
+      data: { estado, vigenciaDesde, vigenciaHasta },
+    });
+  }
+
+  /**
+   * EP-03: transiciones de vigencia del catálogo (PROGRAMADO -> PUBLICADO
+   * al llegar vigenciaDesde, PUBLICADO -> VENCIDO al pasar vigenciaHasta),
+   * procesadas de forma perezosa — mismo criterio que
+   * InventarioService.liberarReservasVencidas (este proyecto evita cron de
+   * NestJS a propósito, ver EP-20): se llama desde donde se lee el
+   * catálogo (CatalogController.catalogoVigente/catalogoPublico), antes de
+   * armar la respuesta, así que con solo consultar el catálogo alcanza
+   * para que el estado esté al día.
+   */
+  async verificarTransicionesCatalogo() {
+    const ahora = new Date();
+    await this.prisma.catalog.updateMany({
+      where: { estado: EstadoCatalogo.PROGRAMADO, vigenciaDesde: { lte: ahora } },
+      data: { estado: EstadoCatalogo.PUBLICADO },
+    });
+    await this.prisma.catalog.updateMany({
+      where: { estado: EstadoCatalogo.PUBLICADO, vigenciaHasta: { lte: ahora } },
+      data: { estado: EstadoCatalogo.VENCIDO },
     });
   }
 

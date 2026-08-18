@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError, resolveAssetUrl } from '../../lib/api';
 import { EditarProductoModal, LineaAdmin } from './EditarProductoModal';
+import { CargaMasivaCatalogoModal } from './CargaMasivaCatalogoModal';
 import { CatalogosPanel } from './CatalogosPanel';
 import { FiltrosCatalogo } from '../catalogo/FiltrosCatalogo';
 import { useFiltrosCatalogo } from '../../lib/useFiltrosCatalogo';
@@ -20,6 +21,7 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
   const [precios, setPrecios] = useState<Record<string, string>>({});
   const [editando, setEditando] = useState<Linea | null>(null);
   const [creando, setCreando] = useState(false);
+  const [cargaMasivaAbierta, setCargaMasivaAbierta] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [resultadoSync, setResultadoSync] = useState<string | null>(null);
   // EP-14: comparación de stock (reporte, no toca nada — el stock real que
@@ -184,6 +186,14 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
         </div>
 
         <div className="rounded-card bg-white p-3 shadow-sm">
+          <p className="text-sm font-medium text-bosque">Carga masiva</p>
+          <p className="mt-1 text-xs text-bosque/50">Subí un Excel con varios productos de una — para el catálogo elegido arriba.</p>
+          <button onClick={() => setCargaMasivaAbierta(true)} className="mt-2 w-full rounded-pill bg-bosque py-2 text-sm font-medium text-white">
+            Subir Excel
+          </button>
+        </div>
+
+        <div className="rounded-card bg-white p-3 shadow-sm">
           <p className="text-sm font-medium text-bosque">Sincronizar con Odoo</p>
           <p className="mt-1 text-xs text-bosque/50">Actualiza nombre y precio (PVP) desde Odoo para los productos que ya existen acá, por SKU.</p>
           <button
@@ -340,6 +350,14 @@ export function CatalogoPreciosTab({ catalogoId, onCambiarCatalogo }: Props) {
             cargarLineas(catalogoId);
           }}
           onEliminado={() => setCreando(false)}
+        />
+      )}
+
+      {cargaMasivaAbierta && (
+        <CargaMasivaCatalogoModal
+          catalogId={catalogoId}
+          onClose={() => setCargaMasivaAbierta(false)}
+          onCargado={() => cargarLineas(catalogoId)}
         />
       )}
         </>

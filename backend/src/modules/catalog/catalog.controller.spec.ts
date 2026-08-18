@@ -1,3 +1,6 @@
+import { BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import * as ExcelJS from 'exceljs';
 import { CatalogController } from './catalog.controller';
 
 describe('CatalogController.compararStockOdoo (EP-14)', () => {
@@ -8,7 +11,8 @@ describe('CatalogController.compararStockOdoo (EP-14)', () => {
     const pricing: any = {};
     const buscador: any = {};
     const inventario: any = {};
-    const controller = new CatalogController(prisma, pricing, odoo, buscador, inventario);
+    const campaigns: any = {};
+    const controller = new CatalogController(prisma, pricing, odoo, buscador, inventario, campaigns);
     return { controller, prisma, odoo };
   }
 
@@ -61,5 +65,128 @@ describe('CatalogController.compararStockOdoo (EP-14)', () => {
     await controller.compararStockOdoo();
 
     expect(prisma.catalogLine.findMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CatalogController — EP-03 (duplicados + carga masiva)', () => {
+  function crearController() {
+    const prisma: any = {
+      catalogLine: { create: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
+      auditLog: { create: jest.fn() },
+    };
+    const pricing: any = {};
+    const odoo: any = {};
+    const buscador: any = {};
+    const inventario: any = {};
+    const campaigns: any = {};
+    const controller = new CatalogController(prisma, pricing, odoo, buscador, inventario, campaigns);
+    return { controller, prisma };
+  }
+
+  async function archivoDeEjemplo(filas: (string | number)[][]) {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Productos');
+    ws.addRow(['sku', 'nombre', 'categoria', 'linea', 'subcategoria', 'tipo', 'descripcion', 'beneficios', 'propiedades', 'modo_uso', 'activos', 'pvp']);
+    for (const fila of filas) ws.addRow(fila);
+    const buffer = await wb.xlsx.writeBuffer();
+    return { buffer: Buffer.from(buffer) } as Express.Multer.File;
+  }
+
+  describe('crearLinea — SKU duplicado', () => {
+    it('da un mensaje claro en vez del error crudo de Postgres (P2002)', async () => {
+      const { controller, prisma } = crearController();
+      const errorP2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.19.0' });
+      prisma.catalogLine.create.mockRejectedValue(errorP2002);
+
+      await expect(controller.crearLinea({ catalogId: 'cat1', sku: 'HSK-0001', pvpCampania: 10 } as any)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('otros errores de Prisma no se disfrazan de duplicado — se re-lanzan tal cual', async () => {
+      const { controller, prisma } = crearController();
+      prisma.catalogLine.create.mockRejectedValue(new Error('otra falla'));
+
+      await expect(controller.crearLinea({ catalogId: 'cat1', sku: 'HSK-0001', pvpCampania: 10 } as any)).rejects.toThrow(
+        'otra falla',
+      );
+    });
+  });
+
+  describe('carga masiva — previsualizar', () => {
+    it('marca error si el SKU ya existe en el catálogo', async () => {
+      const { controller, prisma } = crearController();
+      prisma.catalogLine.findUnique.mockResolvedValue({ id: 'existente' });
+      const archivo = await archivoDeEjemplo([['HSK-0001', 'Shampoo', '', '', '', '', '', '', '', '', '', '25.90']]);
+
+      const resultado = await controller.previsualizarCargaMasivaLineas('cat1', archivo);
+
+      expect(resultado.validos).toEqual([]);
+      expect(resultado.errores).toEqual(
+        expect.arrayContaining([expect.objectContaining({ campo: 'sku', motivo: expect.stringContaining('Ya existe') })]),
+      );
+    });
+
+    it('marca error si el SKU está duplicado dentro del mismo archivo', async () => {
+      const { controller } = crearController();
+      const archivo = await archivoDeEjemplo([
+        ['HSK-0001', 'Shampoo', '', '', '', '', '', '', '', '', '', '25.90'],
+        ['HSK-0001', 'Shampoo otra vez', '', '', '', '', '', '', '', '', '', '30'],
+      ]);
+
+      const resultado = await controller.previsualizarCargaMasivaLineas('cat1', archivo);
+
+      expect(resultado.errores).toEqual(
+        expect.arrayContaining([expect.objectContaining({ fila: 3, motivo: expect.stringContaining('duplicado dentro del archivo') })]),
+      );
+    });
+
+    it('marca error si el pvp no es un número positivo', async () => {
+      const { controller } = crearController();
+      const archivo = await archivoDeEjemplo([['HSK-0002', 'Acondicionador', '', '', '', '', '', '', '', '', '', '0']]);
+
+      const resultado = await controller.previsualizarCargaMasivaLineas('cat1', archivo);
+
+      expect(resultado.errores).toEqual(expect.arrayContaining([expect.objectContaining({ campo: 'pvp' })]));
+    });
+
+    it('una fila válida pasa a "validos" con sus datos', async () => {
+      const { controller } = crearController();
+      const archivo = await archivoDeEjemplo([['HSK-0003', 'Mascarilla', 'Cuidado', '', '', '', '', '', '', '', '', '45.5']]);
+
+      const resultado = await controller.previsualizarCargaMasivaLineas('cat1', archivo);
+
+      expect(resultado.errores).toEqual([]);
+      expect(resultado.validos).toEqual([
+        expect.objectContaining({ sku: 'HSK-0003', nombre: 'Mascarilla', categoria: 'Cuidado', pvpCampania: '45.5' }),
+      ]);
+    });
+
+    it('exige el archivo y el catalogId', async () => {
+      const { controller } = crearController();
+      await expect(controller.previsualizarCargaMasivaLineas('cat1', undefined)).rejects.toThrow(BadRequestException);
+      const archivo = await archivoDeEjemplo([]);
+      await expect(controller.previsualizarCargaMasivaLineas('', archivo)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('carga masiva — confirmar', () => {
+    it('crea una CatalogLine por cada fila y deja rastro en AuditLog', async () => {
+      const { controller, prisma } = crearController();
+      prisma.catalogLine.create.mockResolvedValue({ id: 'nueva' });
+
+      const resultado = await controller.confirmarCargaMasivaLineas(
+        { catalogId: 'cat1', filas: [{ sku: 'HSK-0001', nombre: 'Shampoo', pvpCampania: '25.9' }] },
+        { user: { id: 'actor-1' } },
+      );
+
+      expect(resultado).toEqual({ creadas: 1 });
+      expect(prisma.catalogLine.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ catalogId: 'cat1', sku: 'HSK-0001', pvpCampania: 25.9 }) }),
+      );
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ actorId: 'actor-1', accion: 'CARGA_MASIVA_CATALOGO' }) }),
+      );
+    });
   });
 });

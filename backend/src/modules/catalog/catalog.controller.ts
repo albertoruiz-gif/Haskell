@@ -1,9 +1,12 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { Prisma } from '@prisma/client';
+import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../../config/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { OdooClient } from '../odoo/odoo.client';
 import { InventarioService } from '../inventario/inventario.service';
+import { CampaignsService } from '../campaigns/campaigns.service';
 import { BuscadorCatalogo } from './buscador-catalogo';
 import { Public } from '../../common/decorators/public.decorator';
 import { CrearLineaDto } from './dto/crear-linea.dto';
@@ -13,6 +16,7 @@ import { DefinirPackDto } from './dto/definir-pack.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { multerCatalogConfig } from '../../common/upload/multer-catalog.config';
+import { multerExcelConfig } from '../../common/upload/multer-excel.config';
 
 /**
  * RF-011/RF-012/RF-013 y RF-048: el catalogo visible se filtra en el
@@ -28,6 +32,7 @@ export class CatalogController {
     private readonly odoo: OdooClient,
     private readonly buscador: BuscadorCatalogo,
     private readonly inventario: InventarioService,
+    private readonly campaigns: CampaignsService,
   ) {}
 
   // Roles que administran el catalogo pero no son asesores (sin canal
@@ -128,6 +133,9 @@ export class CatalogController {
     // aunque ya estuviera libre otra vez. Al liberar acá también, con solo
     // mirar el catálogo alcanza para que el número se actualice.
     await this.inventario.liberarReservasVencidas();
+    // EP-03: catálogos PROGRAMADO que ya llegaron a su vigenciaDesde pasan
+    // a PUBLICADO acá — mismo criterio perezoso que la línea de arriba.
+    await this.campaigns.verificarTransicionesCatalogo();
 
     const canalDelUsuario = req.user.canal; // proviene del JWT, no del querystring
 
@@ -225,6 +233,7 @@ export class CatalogController {
   @Public()
   @Get('publico')
   async catalogoPublico() {
+    await this.campaigns.verificarTransicionesCatalogo();
     const base = {
       catalog: { estado: 'PUBLICADO' as const, vigenciaDesde: { lte: new Date() }, vigenciaHasta: { gte: new Date() } },
       stockConfirmado: true, // solo productos con inventario físico real — no mostrar algo que no se puede vender de verdad
@@ -278,8 +287,136 @@ export class CatalogController {
 
   @Post('admin/lineas')
   @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
-  crearLinea(@Body() dto: CrearLineaDto) {
-    return this.prisma.catalogLine.create({ data: dto });
+  async crearLinea(@Body() dto: CrearLineaDto) {
+    try {
+      return await this.prisma.catalogLine.create({ data: dto });
+    } catch (e) {
+      // EP-03: antes esto reventaba con el error crudo de Postgres (P2002)
+      // si el SKU ya existía en el catálogo — @@unique([catalogId, sku]).
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new BadRequestException(`Ya existe un producto con el SKU "${dto.sku}" en este catálogo.`);
+      }
+      throw e;
+    }
+  }
+
+  // EP-03: carga masiva de productos vía UI (antes solo con scripts Python
+  // offline, ver catalogo-haskell/). Mismo patrón que
+  // AfiliacionService.previsualizarCargaMasiva/confirmarCargaMasiva: preview
+  // sin persistir, confirmar solo con las filas ya validadas.
+  @Post('admin/lineas/masiva/previsualizar')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  @UseInterceptors(FileInterceptor('archivo', multerExcelConfig))
+  async previsualizarCargaMasivaLineas(@Body('catalogId') catalogId: string, @UploadedFile() archivo?: Express.Multer.File) {
+    if (!archivo) throw new BadRequestException('Subí un archivo Excel (.xlsx).');
+    if (!catalogId) throw new BadRequestException('Falta indicar a qué catálogo pertenece la carga.');
+    return this.previsualizarCargaMasivaCatalogo(archivo.buffer, catalogId);
+  }
+
+  @Post('admin/lineas/masiva/confirmar')
+  @Roles('ADMINISTRADOR', 'GERENTE_COMERCIAL', 'GESTOR_CATALOGO')
+  confirmarCargaMasivaLineas(@Body() dto: { catalogId: string; filas: any[] }, @Req() req: any) {
+    return this.confirmarCargaMasivaCatalogo(dto.catalogId, dto.filas, req.user.id);
+  }
+
+  private async previsualizarCargaMasivaCatalogo(buffer: Buffer, catalogId: string) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    const hoja = workbook.worksheets[0];
+    if (!hoja) throw new BadRequestException('El archivo no tiene hojas.');
+
+    const encabezados = (hoja.getRow(1).values as any[]).map((v) => String(v ?? '').trim());
+    const validos: Record<string, string>[] = [];
+    const errores: { fila: number; campo: string; motivo: string }[] = [];
+    const skusVistosEnArchivo = new Set<string>();
+
+    for (let i = 2; i <= hoja.rowCount; i++) {
+      const row = hoja.getRow(i);
+      if (row.values.length === 0) continue;
+
+      const obtener = (nombreCol: string) => {
+        const idx = encabezados.indexOf(nombreCol);
+        return idx >= 0 ? String(row.getCell(idx).value ?? '').trim() : '';
+      };
+
+      const fila = {
+        fila: String(i),
+        sku: obtener('sku'),
+        nombre: obtener('nombre'),
+        categoria: obtener('categoria'),
+        linea: obtener('linea'),
+        subcategoria: obtener('subcategoria'),
+        tipo: obtener('tipo'),
+        descripcion: obtener('descripcion'),
+        beneficios: obtener('beneficios'),
+        propiedades: obtener('propiedades'),
+        modoUso: obtener('modo_uso'),
+        activos: obtener('activos'),
+        pvpCampania: obtener('pvp'),
+      };
+
+      let filaValida = true;
+      const marcarError = (campo: string, motivo: string) => {
+        errores.push({ fila: i, campo, motivo });
+        filaValida = false;
+      };
+
+      if (!fila.sku) marcarError('sku', 'SKU vacío.');
+      else if (skusVistosEnArchivo.has(fila.sku)) marcarError('sku', 'SKU duplicado dentro del archivo.');
+      else skusVistosEnArchivo.add(fila.sku);
+
+      if (fila.sku) {
+        const existe = await this.prisma.catalogLine.findUnique({ where: { catalogId_sku: { catalogId, sku: fila.sku } } });
+        if (existe) marcarError('sku', 'Ya existe un producto con este SKU en el catálogo.');
+      }
+
+      if (!fila.nombre) marcarError('nombre', 'Nombre vacío.');
+
+      const pvpNumero = Number(fila.pvpCampania);
+      if (!fila.pvpCampania || Number.isNaN(pvpNumero) || pvpNumero <= 0) {
+        marcarError('pvp', 'El precio (columna "pvp") debe ser un número mayor a 0.');
+      }
+
+      if (filaValida) validos.push(fila);
+    }
+
+    return { validos, errores };
+  }
+
+  private async confirmarCargaMasivaCatalogo(catalogId: string, filas: Record<string, string>[], actorId: string) {
+    const creadas = [];
+    for (const fila of filas) {
+      const creada = await this.prisma.catalogLine.create({
+        data: {
+          catalogId,
+          sku: fila.sku,
+          nombre: fila.nombre || undefined,
+          categoria: fila.categoria || undefined,
+          linea: fila.linea || undefined,
+          subcategoria: fila.subcategoria || undefined,
+          tipo: fila.tipo || undefined,
+          descripcion: fila.descripcion || undefined,
+          beneficios: fila.beneficios || undefined,
+          propiedades: fila.propiedades || undefined,
+          modoUso: fila.modoUso || undefined,
+          activos: fila.activos || undefined,
+          pvpCampania: Number(fila.pvpCampania),
+        },
+      });
+      creadas.push(creada);
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        accion: 'CARGA_MASIVA_CATALOGO',
+        entidad: 'CatalogLine',
+        entidadId: catalogId,
+        valoresDespues: { cantidad: creadas.length },
+      },
+    });
+
+    return { creadas: creadas.length };
   }
 
   // Sincroniza nombre y PVP desde Odoo (fuente real del catálogo) hacia las

@@ -86,10 +86,7 @@ export function CatalogosPanel({ onCambio }: { onCambio: () => void }) {
 
   async function publicar(catalogId: string) {
     setError(null);
-    const v = vigencia[catalogId] ?? {
-      desde: new Date().toISOString().slice(0, 10),
-      hasta: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    };
+    const v = vigenciaDe(catalogId);
     try {
       await apiFetch(`/campaigns/catalogos/${catalogId}/publicar`, {
         method: 'POST',
@@ -107,7 +104,21 @@ export function CatalogosPanel({ onCambio }: { onCambio: () => void }) {
     BORRADOR: 'bg-crema text-bosque/70',
     APROBADO: 'bg-musgo/20 text-musgo-dark',
     SUSPENDIDO: 'bg-red-100 text-red-700',
+    // EP-03: programado (esperando su vigenciaDesde) y vencido (ya pasó su
+    // vigenciaHasta) — ambos se resuelven solos, sin cron, la primera vez
+    // que alguien consulta el catálogo (ver CampaignsService.verificarTransicionesCatalogo).
+    PROGRAMADO: 'bg-acento/20 text-acento',
+    VENCIDO: 'bg-bosque/10 text-bosque/40',
   };
+
+  function vigenciaDe(catalogId: string) {
+    return (
+      vigencia[catalogId] ?? {
+        desde: new Date().toISOString().slice(0, 10),
+        hasta: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      }
+    );
+  }
 
   return (
     <div className={esPrimerPaso ? 'rounded-card border-2 border-acento bg-white p-3 shadow-sm' : 'rounded-card bg-white p-3 shadow-sm'}>
@@ -135,12 +146,31 @@ export function CatalogosPanel({ onCambio }: { onCambio: () => void }) {
                   {catalogosDeCampania.map((cat) => (
                     <div key={cat.id} className="flex items-center justify-between rounded-card bg-crema px-2 py-1">
                       <span className="text-xs text-bosque">{cat.canal} · v{cat.version}</span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className={`rounded-pill px-2 py-0.5 text-[11px] font-medium ${ESTADO_COLOR[cat.estado] ?? ''}`}>{cat.estado}</span>
                         {cat.estado !== 'PUBLICADO' && (
-                          <button onClick={() => publicar(cat.id)} className="rounded-pill bg-acento px-2 py-1 text-[11px] font-medium text-white">
-                            Publicar
-                          </button>
+                          <>
+                            {/* EP-03: si "desde" queda en el futuro, el catálogo entra como
+                                PROGRAMADO en vez de PUBLICADO de una — se publica solo cuando
+                                llega la fecha (ver CampaignsService.publicarCatalogo). */}
+                            <input
+                              type="date"
+                              title="Vigente desde"
+                              value={vigenciaDe(cat.id).desde}
+                              onChange={(e) => setVigencia((v) => ({ ...v, [cat.id]: { ...vigenciaDe(cat.id), desde: e.target.value } }))}
+                              className="rounded-pill border border-musgo/30 px-1.5 py-1 text-[11px]"
+                            />
+                            <input
+                              type="date"
+                              title="Vigente hasta"
+                              value={vigenciaDe(cat.id).hasta}
+                              onChange={(e) => setVigencia((v) => ({ ...v, [cat.id]: { ...vigenciaDe(cat.id), hasta: e.target.value } }))}
+                              className="rounded-pill border border-musgo/30 px-1.5 py-1 text-[11px]"
+                            />
+                            <button onClick={() => publicar(cat.id)} className="rounded-pill bg-acento px-2 py-1 text-[11px] font-medium text-white">
+                              Publicar
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
