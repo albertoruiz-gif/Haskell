@@ -223,8 +223,7 @@ describe('ClientesService', () => {
       const { service, prisma } = crearService();
       prisma.registroCobro.findUniqueOrThrow.mockResolvedValue({ id: 'cobro-1', estado: 'PENDIENTE', clienteId: 'c1', monto: 100 });
       prisma.cliente.findUniqueOrThrow.mockResolvedValue({ id: 'c1', saldoUtilizado: 300, estado: 'MOROSO' });
-      let dataClienteGuardada: any;
-      prisma.$transaction.mockImplementation((ops: any[]) => {
+      prisma.$transaction.mockImplementation(() => {
         // El segundo elemento del array es la promesa de cliente.update — en
         // este mock no ejecutamos las promesas reales, solo inspeccionamos
         // los args con los que se llamó a prisma.cliente.update más abajo.
