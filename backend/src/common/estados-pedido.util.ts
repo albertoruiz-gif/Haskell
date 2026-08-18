@@ -7,10 +7,8 @@ import { EstadoPedido } from '@prisma/client';
  * catalogo-haskell/PROMPT_investigar_estados_pago.md).
  */
 export const ESTADO_PEDIDO_LABEL: Record<EstadoPedido, string> = {
-  BORRADOR: 'Borrador (aún no confirmado)',
   PENDIENTE_PAGO: 'Pendiente de pago',
   PAGADO: 'Pago confirmado',
-  STOCK_RESERVADO: 'Stock reservado, preparando tu pedido',
   PICKING: 'En preparación (picking)',
   PACKING: 'En empaque',
   ENTREGADO_TRANSPORTISTA: 'Entregado al transportista',

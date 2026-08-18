@@ -179,6 +179,20 @@ describe('OrdersService — confirmarPagoYEnviarAOdoo', () => {
     expect(odoo.crearPedidoVenta).toHaveBeenCalled();
     expect(prisma.order.update).toHaveBeenCalledWith(expect.objectContaining({ data: { odooSaleOrderId: 999 } }));
   });
+
+  // EP-07 (auditoría 2026-08-18): el chequeo anterior era "si NO está
+  // PAGADO, marcarlo PAGADO" — una confirmación de Culqi que llegara tarde
+  // sobre un pedido ya cancelado/vencido/entregado lo "resucitaba" a PAGADO
+  // igual. Ahora exige que la transición sea válida (solo PENDIENTE_PAGO).
+  it.each([EstadoPedido.CANCELADO_DEVUELTO, EstadoPedido.ANULADO_POR_VENCIMIENTO, EstadoPedido.ENTREGADO])(
+    'NO resucita a PAGADO un pedido en %s aunque Culqi confirme tarde',
+    async (estado) => {
+      const { service, prisma, inventario } = crearService(crearOrder({ estado, odooSaleOrderId: null }));
+      await expect(service.confirmarPagoYEnviarAOdoo('order-1')).rejects.toThrow(BadRequestException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+      expect(inventario.comprometerParaOrder).not.toHaveBeenCalled();
+    },
+  );
 });
 
 // EP-04 (decisión de negocio 2026-08-15): descuento por volumen aprobado

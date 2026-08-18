@@ -12,6 +12,7 @@ import { calcularFechaEntregaPrometida } from '../../common/sla.util';
 import { formatearNumeroPedido } from '../../common/numero-pedido.util';
 import { ESTADO_PEDIDO_LABEL } from '../../common/estados-pedido.util';
 import { ESTADO_ENTREGA_LABEL } from '../../common/estados-entrega.util';
+import { TRANSICIONES_VALIDAS, asegurarTransicionValida } from '../../common/maquina-estados-pedido';
 
 // EP-21 — solo estos canales admiten Cliente/formaPago distinta de
 // CONTADO_CULQI. En COMERCIO_MINORISTA el Asesor compra para sí mismo.
@@ -409,9 +410,7 @@ export class OrdersService {
     if (order.formaPago !== FormaPago.CONTADO_DEPOSITO) {
       throw new BadRequestException('Este pedido no es de pago por depósito.');
     }
-    if (order.estado !== EstadoPedido.PENDIENTE_PAGO) {
-      throw new BadRequestException(`No se puede validar: el pedido está en estado ${order.estado}.`);
-    }
+    asegurarTransicionValida(order.estado, EstadoPedido.PAGADO);
     if (!order.depositoNumeroOperacion) {
       throw new BadRequestException('Todavía no se registró el número de operación del depósito (RN EP-21).');
     }
@@ -458,11 +457,7 @@ export class OrdersService {
     // estado previo — un pedido ya PAGADO, CANCELADO_DEVUELTO o vencido se
     // podía "re-confirmar" igual, comprometiendo stock por segunda vez.
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-    if (order.estado !== EstadoPedido.PENDIENTE_PAGO) {
-      throw new BadRequestException(
-        `No se puede validar el pago: el pedido está en estado ${order.estado}, no en PENDIENTE_PAGO.`,
-      );
-    }
+    asegurarTransicionValida(order.estado, EstadoPedido.PAGADO);
 
     await this.prisma.auditLog.create({
       data: { actorId, accion: 'VALIDAR_PAGO', entidad: 'Order', entidadId: orderId, valoresAntes: { estado: order.estado } },
@@ -478,8 +473,12 @@ export class OrdersService {
   // Estados desde los que todavía tiene sentido "rechazar" el pedido entero
   // (nunca se despachó nada físico). A partir de PICKING, lo que corresponde
   // es el flujo de entrega fallida/devolución (registrarEntregaFallida en
-  // OperacionesService), no este método.
-  private readonly ESTADOS_RECHAZABLES: EstadoPedido[] = [EstadoPedido.PENDIENTE_PAGO, EstadoPedido.PAGADO];
+  // OperacionesService), no este método. Se derivan del mapa central de
+  // transiciones (EP-07) para no mantener una lista aparte que se pueda
+  // desincronizar de TRANSICIONES_VALIDAS.
+  private readonly ESTADOS_RECHAZABLES: EstadoPedido[] = Object.entries(TRANSICIONES_VALIDAS)
+    .filter(([, destinos]) => destinos.includes(EstadoPedido.CANCELADO_DEVUELTO))
+    .map(([origen]) => origen as EstadoPedido);
 
   async rechazarPedido(orderId: string, actorId: string, motivo?: string) {
     // Auditoría 2026-08-12 (EP-07): antes cancelaba el pedido sin importar
@@ -541,7 +540,17 @@ export class OrdersService {
 
     // Paso 1 — innegociable: el cliente ya pagó, el pedido tiene que
     // reflejarlo sí o sí, pase lo que pase con Odoo.
+    //
+    // Auditoría 2026-08-18 (EP-07): el chequeo anterior era "si NO está
+    // PAGADO, marcarlo PAGADO" — eso significaba que una confirmación de
+    // Culqi que llegara tarde (por ejemplo, sobre un pedido que mientras
+    // tanto se rechazó, o cuya reserva de stock venció) podía "resucitarlo"
+    // a PAGADO sin pasar por PENDIENTE_PAGO. Ahora, si el pedido ya está
+    // PAGADO (reintento típico: el paso 2 de Odoo falló antes), se salta
+    // la transición y solo se reintenta la sincronización; para cualquier
+    // otro estado que no sea PENDIENTE_PAGO, se rechaza.
     if (order.estado !== EstadoPedido.PAGADO) {
+      asegurarTransicionValida(order.estado, EstadoPedido.PAGADO);
       order = await this.prisma.order.update({
         where: { id: orderId },
         data: { estado: EstadoPedido.PAGADO },

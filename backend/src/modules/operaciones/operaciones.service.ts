@@ -6,6 +6,7 @@ import { InventarioService } from '../inventario/inventario.service';
 import { formatearNumeroPedido } from '../../common/numero-pedido.util';
 import { calcularEstadoSaludEntrega, calcularFechaEntregaPrometida } from '../../common/sla.util';
 import { ESTADO_PEDIDO_LABEL } from '../../common/estados-pedido.util';
+import { asegurarTransicionValida } from '../../common/maquina-estados-pedido';
 
 /**
  * Picking/packing/despacho/entrega — pantalla "Almacén" del mockup.
@@ -80,7 +81,7 @@ export class OperacionesService {
       where: { id: orderId },
       include: { items: true, asesor: true },
     });
-    if (order.estado !== EstadoPedido.PAGADO && order.estado !== EstadoPedido.STOCK_RESERVADO) {
+    if (order.estado !== EstadoPedido.PAGADO) {
       throw new BadRequestException('Solo se puede iniciar picking sobre pedidos pagados (RN-020).');
     }
 
@@ -98,6 +99,10 @@ export class OperacionesService {
   // RF-025: confirma picking — no cierra con diferencias sin incidencia resuelta
   async confirmarPicking(orderId: string, actorId: string, incidencia?: string) {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    // Auditoría 2026-08-18 (EP-07): este método no validaba el estado de
+    // origen — se podía "confirmar picking" sobre un pedido en cualquier
+    // estado (incluso sin pagar todavía, o ya entregado).
+    asegurarTransicionValida(order.estado, EstadoPedido.PICKING);
     if (order.odooSaleOrderId) {
       const [picking] = await this.odoo.obtenerPicking(order.odooSaleOrderId);
       if (picking) await this.odoo.confirmarPicking(picking.id);
@@ -123,9 +128,7 @@ export class OperacionesService {
   // que es donde vive el campo Entrega.bultos.
   async confirmarPacking(orderId: string) {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-    if (order.estado !== EstadoPedido.PICKING) {
-      throw new BadRequestException('Completá el picking antes de empacar.');
-    }
+    asegurarTransicionValida(order.estado, EstadoPedido.PACKING);
     const actualizado = await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.PACKING } });
     await this.sincronizarEstadoPedidoAOdoo(orderId);
     return actualizado;
@@ -152,6 +155,11 @@ export class OperacionesService {
     if (actorRol !== 'ADMINISTRADOR' && entrega.transportistaId !== actorTransportistaId) {
       throw new BadRequestException('Solo el transportista asignado puede aceptar los bultos.');
     }
+    // Auditoría 2026-08-18 (EP-07): antes no validaba el estado del pedido,
+    // solo la identidad del transportista — se podía aceptar bultos de un
+    // pedido que ni siquiera pasó por packing.
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    asegurarTransicionValida(order.estado, EstadoPedido.ENTREGADO_TRANSPORTISTA);
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO_TRANSPORTISTA } });
     const actualizada = await this.prisma.entrega.update({
       where: { orderId },
@@ -167,6 +175,8 @@ export class OperacionesService {
     if (entrega.estado !== EstadoEntrega.ACEPTADO) {
       throw new BadRequestException('Primero hay que aceptar los bultos antes de salir a reparto.');
     }
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    asegurarTransicionValida(order.estado, EstadoPedido.EN_RUTA);
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.EN_RUTA } });
     const actualizada = await this.prisma.entrega.update({ where: { orderId }, data: { estado: EstadoEntrega.EN_RUTA } });
     await this.sincronizarEstadoPedidoAOdoo(orderId);
@@ -182,6 +192,12 @@ export class OperacionesService {
     if (!data.documentoReceptor) throw new BadRequestException('La entrega requiere el DNI de quién recibió.');
     if (!data.evidenciaUrl) throw new BadRequestException('La entrega requiere una foto de evidencia.');
     const entregaActual = await this.prisma.entrega.findUniqueOrThrow({ where: { orderId }, include: { transportista: true } });
+    // Auditoría 2026-08-18 (EP-07): antes no validaba en absoluto el estado
+    // del pedido ni de la entrega antes de marcar ENTREGADO y consumir el
+    // stock comprometido — se podía "entregar" un pedido que ni siquiera
+    // había salido a reparto.
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    asegurarTransicionValida(order.estado, EstadoPedido.ENTREGADO);
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGADO } });
     // Recién acá sale físicamente del lote — hasta este momento solo estaba comprometido.
     await this.inventario.consumirParaOrder(orderId);
@@ -214,6 +230,11 @@ export class OperacionesService {
   // RF-029: entrega fallida — no se marca exitosa, genera alerta para reprogramar/devolver
   async registrarEntregaFallida(orderId: string, motivo: string, observaciones?: string) {
     if (!motivo) throw new BadRequestException('La entrega fallida requiere motivo (RF-029).');
+    // Auditoría 2026-08-18 (EP-07): antes no validaba el estado del pedido —
+    // se podía registrar una entrega fallida (liberando stock) sobre un
+    // pedido que ni siquiera había salido a reparto.
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    asegurarTransicionValida(order.estado, EstadoPedido.ENTREGA_FALLIDA);
     await this.prisma.order.update({ where: { id: orderId }, data: { estado: EstadoPedido.ENTREGA_FALLIDA } });
     // Simplificación: la mercadería vuelve directo a disponible (sin un
     // sub-flujo de inspección de devolución física aparte, ver EP-21/documento).
@@ -242,6 +263,11 @@ export class OperacionesService {
     if (entrega.estado !== EstadoEntrega.FALLIDO) {
       throw new BadRequestException('Solo se puede reprogramar una entrega que falló.');
     }
+    // EP-07: mismo chequeo pero sobre Order.estado, vía el mapa central de
+    // transiciones (defensivo — en la práctica Entrega.estado === FALLIDO
+    // ya implica Order.estado === ENTREGA_FALLIDA).
+    const orderActual = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    asegurarTransicionValida(orderActual.estado, EstadoPedido.PACKING);
 
     await this.inventario.reservarParaOrder(orderId);
     await this.inventario.comprometerParaOrder(orderId);

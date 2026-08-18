@@ -77,10 +77,8 @@ enum EstadoEntrega {
 }
 
 enum EstadoPedido {
-  BORRADOR
   PENDIENTE_PAGO
   PAGADO
-  STOCK_RESERVADO
   PICKING
   PACKING
   ENTREGADO_TRANSPORTISTA
@@ -842,7 +840,10 @@ model Order {
   // que se le calcula el desglose de abajo, nunca al revés (EP-04, decisión
   // de negocio 2026-08-15: "Haskell tiene en sus precios el IGV incluido").
   totalCulqi              Decimal      @db.Decimal(10, 2)
-  estado                  EstadoPedido @default(BORRADOR)
+  // EP-07: sin default a propósito — todo Order.create() debe declarar su
+  // estado inicial explícitamente (siempre PENDIENTE_PAGO en la práctica),
+  // en vez de heredar uno tácito que nadie pidió. Ver common/maquina-estados-pedido.ts.
+  estado                  EstadoPedido
 
   // EP-04 — descuento por volumen (solo canales SALONES_BELLEZA/RETAIL,
   // aprobado por pedido puntual — ver SolicitudDescuento). 0 por defecto.
