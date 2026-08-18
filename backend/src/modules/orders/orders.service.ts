@@ -7,6 +7,7 @@ import { OdooClient } from '../odoo/odoo.client';
 import { InventarioService } from '../inventario/inventario.service';
 import { OperacionesService } from '../operaciones/operaciones.service';
 import { ClientesService } from '../clientes/clientes.service';
+import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { calcularFechaEntregaPrometida } from '../../common/sla.util';
 import { formatearNumeroPedido } from '../../common/numero-pedido.util';
 import { ESTADO_PEDIDO_LABEL } from '../../common/estados-pedido.util';
@@ -26,6 +27,7 @@ export class OrdersService {
     private readonly inventario: InventarioService,
     private readonly operaciones: OperacionesService,
     private readonly clientes: ClientesService,
+    private readonly configuracion: ConfiguracionService,
   ) {}
 
   /** Reserva stock real (FEFO) para el pedido recién creado — si falta stock, el pedido queda cancelado y se rechaza. */
@@ -377,7 +379,7 @@ export class OrdersService {
    * del pedido todavía — solo deja el comprobante listo para que
    * GERENTE_COMERCIAL/FINANZAS lo valide con validarDeposito.
    */
-  async registrarDeposito(orderId: string, data: { numeroOperacion: string; banco: string; comprobanteUrl?: string }) {
+  async registrarDeposito(orderId: string, data: { numeroOperacion: string; banco: string; comprobanteUrl?: string; monto?: number }) {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
     if (order.formaPago !== FormaPago.CONTADO_DEPOSITO) {
       throw new BadRequestException('Este pedido no es de pago por depósito.');
@@ -391,6 +393,7 @@ export class OrdersService {
         depositoNumeroOperacion: data.numeroOperacion,
         depositoBanco: data.banco,
         depositoComprobanteUrl: data.comprobanteUrl,
+        depositoMonto: data.monto,
         depositoEstado: 'PENDIENTE_VALIDACION',
       },
     });
@@ -411,6 +414,18 @@ export class OrdersService {
     }
     if (!order.depositoNumeroOperacion) {
       throw new BadRequestException('Todavía no se registró el número de operación del depósito (RN EP-21).');
+    }
+    // EP-16 — si el Asesor declaró un monto, lo conciliamos contra el total
+    // real con una tolerancia configurable (depósitos previos a este cambio
+    // no tienen depositoMonto y se saltan el chequeo, por compatibilidad).
+    if (order.depositoMonto != null) {
+      const tolerancia = await this.configuracion.toleranciaConciliacionSoles();
+      const diferencia = Math.abs(Number(order.depositoMonto) - Number(order.totalCulqi));
+      if (diferencia > tolerancia) {
+        throw new BadRequestException(
+          `El monto depositado (S/ ${Number(order.depositoMonto).toFixed(2)}) no coincide con el total del pedido (S/ ${Number(order.totalCulqi).toFixed(2)}) — diferencia de S/ ${diferencia.toFixed(2)}, supera la tolerancia configurada (S/ ${tolerancia.toFixed(2)}).`,
+        );
+      }
     }
 
     await this.prisma.auditLog.create({

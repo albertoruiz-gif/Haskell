@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { EstadoPedido } from '@prisma/client';
+import { EstadoPedido, FormaPago } from '@prisma/client';
 import { OrdersService } from './orders.service';
 import { PricingService } from '../pricing/pricing.service';
 
@@ -25,6 +25,7 @@ describe('OrdersService — guardas de estado', () => {
     const operaciones = { sincronizarEstadoPedidoAOdoo: jest.fn().mockResolvedValue(undefined) };
 
     const clientes = { liberarCredito: jest.fn().mockResolvedValue(undefined), reservarCredito: jest.fn().mockResolvedValue(undefined) };
+    const configuracion = { toleranciaConciliacionSoles: jest.fn().mockResolvedValue(5) };
     const service = new OrdersService(
       prisma as any,
       {} as any, // pricing — no lo usan estos dos métodos
@@ -33,8 +34,9 @@ describe('OrdersService — guardas de estado', () => {
       inventario as any,
       operaciones as any,
       clientes as any,
+      configuracion as any,
     );
-    return { service, prisma, inventario, operaciones, clientes };
+    return { service, prisma, inventario, operaciones, clientes, configuracion };
   }
 
   describe('validarPagoManual', () => {
@@ -121,7 +123,7 @@ describe('OrdersService — confirmarPagoYEnviarAOdoo', () => {
       crearPedidoVenta: jest.fn().mockResolvedValue(999),
     };
     const clientes = { liberarCredito: jest.fn().mockResolvedValue(undefined), reservarCredito: jest.fn().mockResolvedValue(undefined) };
-    const service = new OrdersService(prisma as any, {} as any, {} as any, odoo as any, inventario as any, {} as any, clientes as any);
+    const service = new OrdersService(prisma as any, {} as any, {} as any, odoo as any, inventario as any, {} as any, clientes as any, {} as any);
     return { service, prisma, inventario, odoo, clientes };
   }
 
@@ -211,7 +213,7 @@ describe('OrdersService — crearPedidoDesdeItems (EP-04 descuento + IGV)', () =
     const operaciones = { sincronizarEstadoPedidoAOdoo: jest.fn().mockResolvedValue(undefined) };
     const clientes = { reservarCredito: jest.fn().mockResolvedValue(undefined), liberarCredito: jest.fn().mockResolvedValue(undefined) };
 
-    const service = new OrdersService(prisma, pricing, campaigns as any, {} as any, inventario as any, operaciones as any, clientes as any);
+    const service = new OrdersService(prisma, pricing, campaigns as any, {} as any, inventario as any, operaciones as any, clientes as any, {} as any);
     return { service, prisma, clientes };
   }
 
@@ -285,7 +287,7 @@ describe('OrdersService — crearPedidoDesdeItems (EP-04 descuento + IGV)', () =
 describe('OrdersService — obtenerSeguimiento (EP-12)', () => {
   function crearService(order: any) {
     const prisma = { order: { findUniqueOrThrow: jest.fn().mockResolvedValue(order) } };
-    const service = new OrdersService(prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const service = new OrdersService(prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
     return { service, prisma };
   }
 
@@ -338,5 +340,88 @@ describe('OrdersService — obtenerSeguimiento (EP-12)', () => {
     expect(resultado.entrega).toEqual(
       expect.objectContaining({ estado: 'EN_RUTA', estadoLabel: 'En camino', transportistaNombre: 'Juan Pérez' }),
     );
+  });
+});
+
+// EP-16: registrarDeposito ahora acepta el monto que el Asesor declara, y
+// validarDeposito lo concilia contra el total real con una tolerancia
+// configurable — depósitos sin monto (registrados antes de este cambio) se
+// saltan el chequeo, por compatibilidad hacia atrás.
+describe('OrdersService — registrarDeposito / validarDeposito (EP-16)', () => {
+  function crearService(ordenEnBD: Record<string, any>, tolerancia = 5) {
+    const prisma = {
+      order: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue(ordenEnBD),
+        update: jest.fn().mockResolvedValue({ ...ordenEnBD }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const inventario = { comprometerParaOrder: jest.fn().mockResolvedValue(undefined) };
+    const operaciones = { sincronizarEstadoPedidoAOdoo: jest.fn().mockResolvedValue(undefined) };
+    const configuracion = { toleranciaConciliacionSoles: jest.fn().mockResolvedValue(tolerancia) };
+    const service = new OrdersService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      inventario as any,
+      operaciones as any,
+      {} as any,
+      configuracion as any,
+    );
+    return { service, prisma, inventario, operaciones, configuracion };
+  }
+
+  const ORDER_BASE = {
+    id: 'order-1',
+    formaPago: FormaPago.CONTADO_DEPOSITO,
+    estado: EstadoPedido.PENDIENTE_PAGO,
+    totalCulqi: 90,
+    depositoNumeroOperacion: 'op-123',
+    depositoMonto: null as number | null,
+  };
+
+  describe('registrarDeposito', () => {
+    it('guarda el monto declarado junto con el resto de datos del depósito', async () => {
+      const { service, prisma } = crearService({ ...ORDER_BASE, depositoNumeroOperacion: null });
+      await service.registrarDeposito('order-1', { numeroOperacion: 'op-123', banco: 'BCP', monto: 90 });
+      expect(prisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ depositoMonto: 90 }) }),
+      );
+    });
+  });
+
+  describe('validarDeposito', () => {
+    it('valida sin problema cuando el monto declarado coincide con el total', async () => {
+      const { service, prisma } = crearService({ ...ORDER_BASE, depositoMonto: 90 });
+      await service.validarDeposito('order-1', 'actor-1');
+      expect(prisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ estado: EstadoPedido.PAGADO }) }),
+      );
+    });
+
+    it('valida sin problema cuando la diferencia está dentro de la tolerancia configurada', async () => {
+      const { service, prisma } = crearService({ ...ORDER_BASE, depositoMonto: 93 }, 5);
+      await service.validarDeposito('order-1', 'actor-1');
+      expect(prisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ estado: EstadoPedido.PAGADO }) }),
+      );
+    });
+
+    it('rechaza cuando la diferencia supera la tolerancia configurada', async () => {
+      const { service, prisma, configuracion } = crearService({ ...ORDER_BASE, depositoMonto: 100 }, 5);
+      await expect(service.validarDeposito('order-1', 'actor-1')).rejects.toThrow(BadRequestException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+      expect(configuracion.toleranciaConciliacionSoles).toHaveBeenCalled();
+    });
+
+    it('no chequea conciliación si el depósito no tiene monto declarado (compatibilidad con depósitos previos)', async () => {
+      const { service, prisma, configuracion } = crearService({ ...ORDER_BASE, depositoMonto: null });
+      await service.validarDeposito('order-1', 'actor-1');
+      expect(prisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ estado: EstadoPedido.PAGADO }) }),
+      );
+      expect(configuracion.toleranciaConciliacionSoles).not.toHaveBeenCalled();
+    });
   });
 });

@@ -864,12 +864,19 @@ model Order {
   cliente                 Cliente?     @relation(fields: [clienteId], references: [id])
   formaPago                FormaPago    @default(CONTADO_CULQI)
   // Solo con formaPago = CONTADO_DEPOSITO. La validación (RN acordada: el
-  // monto depositado debe coincidir con totalCulqi) la hace GERENTE_COMERCIAL
-  // o FINANZAS a mano — no hay conciliación bancaria automática todavía.
+  // monto depositado debe coincidir con totalCulqi, dentro de la tolerancia
+  // configurable en ConfiguracionSistema — EP-16, 2026-08-18) la resuelve
+  // GERENTE_COMERCIAL o FINANZAS a mano — no hay conciliación bancaria
+  // automática con el banco todavía, esto solo evita validar a ciegas un
+  // monto que no coincide.
   depositoEstado           EstadoDeposito?
   depositoNumeroOperacion  String?
   depositoBanco            String?
   depositoComprobanteUrl   String?
+  // Nullable a propósito: depósitos registrados antes de este cambio no
+  // tienen este dato — validarDeposito() se salta el chequeo de tolerancia
+  // cuando es null, no lo trata como una diferencia de S/0.
+  depositoMonto            Decimal?     @db.Decimal(10, 2)
   depositoValidadoPorId    String?
   depositoValidadoEn       DateTime?
   referenciaWeb            String       @unique @default(cuid()) // idempotencia RF-020, no pensado para mostrarse
@@ -1055,6 +1062,14 @@ model ConfiguracionSistema {
   // EP-06/EP-09: minutos que se reserva el stock de un pedido recién creado
   // (PENDIENTE_PAGO) antes de liberarse solo — ver InventarioService.
   minutosReservaStock Int      @default(30)
+  // EP-16 (2026-08-18): margen aceptado entre lo que el asesor declara que
+  // depositó (Order.depositoMonto) y el total real del pedido antes de que
+  // validarDeposito() rechace por diferencia — ver OrdersService.
+  toleranciaConciliacionSoles Decimal @default(5) @db.Decimal(10, 2)
+  // EP-16: interruptores genéricos clave->boolean, editables desde Gestión
+  // → Configuración sin deploy — a propósito NO son columnas tipadas una
+  // por una (crecen sin migración nueva cada vez que se agrega un flag).
+  featureFlags        Json     @default("{}")
   actualizadoPorId    String?
   updatedAt           DateTime @updatedAt
 

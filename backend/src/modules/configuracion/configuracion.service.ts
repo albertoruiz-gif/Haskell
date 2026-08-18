@@ -21,11 +21,14 @@ export class ConfiguracionService {
     });
   }
 
-  async actualizar(data: { minutosReservaStock?: number }, actorId: string) {
+  async actualizar(
+    data: { minutosReservaStock?: number; toleranciaConciliacionSoles?: number; featureFlags?: Record<string, boolean> },
+    actorId: string,
+  ) {
     const anterior = await this.obtener();
     const actualizada = await this.prisma.configuracionSistema.update({
       where: { id: ID_SINGLETON },
-      data: { ...data, actualizadoPorId: actorId },
+      data: { ...data, featureFlags: data.featureFlags as any, actualizadoPorId: actorId },
     });
     await this.prisma.auditLog.create({
       data: {
@@ -33,8 +36,16 @@ export class ConfiguracionService {
         accion: 'ACTUALIZAR_CONFIGURACION',
         entidad: 'ConfiguracionSistema',
         entidadId: ID_SINGLETON,
-        valoresAntes: { minutosReservaStock: anterior.minutosReservaStock },
-        valoresDespues: { minutosReservaStock: actualizada.minutosReservaStock },
+        valoresAntes: {
+          minutosReservaStock: anterior.minutosReservaStock,
+          toleranciaConciliacionSoles: Number(anterior.toleranciaConciliacionSoles),
+          featureFlags: anterior.featureFlags,
+        },
+        valoresDespues: {
+          minutosReservaStock: actualizada.minutosReservaStock,
+          toleranciaConciliacionSoles: Number(actualizada.toleranciaConciliacionSoles),
+          featureFlags: actualizada.featureFlags,
+        },
       },
     });
     return actualizada;
@@ -44,5 +55,23 @@ export class ConfiguracionService {
   async minutosReservaStock(): Promise<number> {
     const config = await this.obtener();
     return config.minutosReservaStock;
+  }
+
+  /** Atajo para OrdersService.validarDeposito (EP-16). */
+  async toleranciaConciliacionSoles(): Promise<number> {
+    const config = await this.obtener();
+    return Number(config.toleranciaConciliacionSoles);
+  }
+
+  /**
+   * EP-16: feature flags genéricos — clave arbitraria -> boolean. Cualquier
+   * módulo puede consultar un flag propio sin que haga falta una migración
+   * nueva ni tocar este servicio; si la clave no existe todavía, se
+   * considera apagado (false), nunca revienta.
+   */
+  async featureFlagActivo(clave: string): Promise<boolean> {
+    const config = await this.obtener();
+    const flags = (config.featureFlags as Record<string, boolean> | null) ?? {};
+    return flags[clave] === true;
   }
 }

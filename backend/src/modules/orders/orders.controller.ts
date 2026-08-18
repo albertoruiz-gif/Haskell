@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { EstadoPedido } from '@prisma/client';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -24,6 +24,14 @@ class RegistrarDepositoDto {
   @IsOptional()
   @IsString()
   comprobanteUrl?: string;
+
+  // EP-16 — monto que el Asesor declara haber depositado; se conciliará
+  // contra el total real del pedido con una tolerancia configurable al
+  // momento de validarDeposito().
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  monto?: number;
 }
 
 @Controller('orders')

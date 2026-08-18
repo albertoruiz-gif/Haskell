@@ -77,6 +77,7 @@ export default function CarritoPage() {
   const [pedidoDeposito, setPedidoDeposito] = useState<Pedido | null>(null);
   const [numeroOperacion, setNumeroOperacion] = useState('');
   const [banco, setBanco] = useState('');
+  const [montoDeposito, setMontoDeposito] = useState('');
   const [depositoEnviado, setDepositoEnviado] = useState(false);
 
   useEffect(() => {
@@ -123,6 +124,7 @@ export default function CarritoPage() {
         setPedidoOk(formatearNumeroPedido(pedido.canal, pedido.numero) ?? pedido.referenciaWeb);
       } else if (pedido.formaPago === 'CONTADO_DEPOSITO') {
         setPedidoDeposito(pedido);
+        setMontoDeposito(String(Number(pedido.totalCulqi).toFixed(2)));
       } else {
         setPedidoPendiente(pedido);
       }
@@ -141,7 +143,10 @@ export default function CarritoPage() {
     setError(null);
     setPagando(true);
     try {
-      await apiFetch(`/orders/${pedidoDeposito.id}/deposito`, { method: 'PATCH', body: { numeroOperacion, banco } });
+      await apiFetch(`/orders/${pedidoDeposito.id}/deposito`, {
+        method: 'PATCH',
+        body: { numeroOperacion, banco, monto: montoDeposito ? Number(montoDeposito) : undefined },
+      });
       setDepositoEnviado(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo registrar el depósito.');
@@ -239,9 +244,18 @@ export default function CarritoPage() {
                 onChange={(e) => setBanco(e.target.value)}
                 className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
               />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Monto depositado (S/)"
+                value={montoDeposito}
+                onChange={(e) => setMontoDeposito(e.target.value)}
+                className="w-full rounded-pill border border-musgo/30 px-3 py-2 text-sm"
+              />
               <button
                 onClick={registrarDeposito}
-                disabled={pagando || !numeroOperacion || !banco}
+                disabled={pagando || !numeroOperacion || !banco || !montoDeposito}
                 className="w-full rounded-pill bg-acento py-3 text-sm font-medium text-white disabled:opacity-50"
               >
                 {pagando ? 'Enviando…' : 'Enviar comprobante'}
